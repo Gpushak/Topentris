@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+.idea/
+.kotlin/
+local.properties
+build/
+.jdk/
+build-log.txt
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+Soundtrek/
