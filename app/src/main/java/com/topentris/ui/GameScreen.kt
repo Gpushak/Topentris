@@ -10,12 +10,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -34,17 +37,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -77,6 +83,7 @@ fun GameScreen(
     repository: SettingsRepository,
     soundtrack: Soundtrack,
     effects: Effects,
+    scorePopups: Boolean,
     onExit: () -> Unit,
     onRestart: () -> Unit,
 ) {
@@ -89,6 +96,9 @@ fun GameScreen(
     board.rules = rules
     board.snap = snap
     val controlsState = rememberUpdatedState(controls)
+    val popupsEnabled = rememberUpdatedState(scorePopups)
+    var floaters by remember(sessionId) { mutableStateOf(emptyList<ScoreFloater>()) }
+    var clock by remember(sessionId) { mutableLongStateOf(0L) }
     var recordPlace by remember(sessionId) { mutableStateOf<Int?>(null) }
     var scoreSent by remember(sessionId) { mutableStateOf(false) }
 
@@ -115,6 +125,11 @@ fun GameScreen(
         var last = 0L
         while (true) {
             withFrameNanos { now ->
+                if (floaters.isNotEmpty()) {
+                    clock = now
+                    val alive = floaters.filter { now - it.born < POPUP_LIFE_NS }
+                    if (alive.size != floaters.size) floaters = alive
+                }
                 if (engine.playState != PlayState.PLAYING) {
                     last = 0L
                     return@withFrameNanos
@@ -127,6 +142,15 @@ fun GameScreen(
                 board.snap = next
                 if (cfg.vibration && next.feedback.isNotEmpty()) vibrate(context)
                 if (Feedback.LOCK in next.feedback) effects.playLock(next.clearedLines)
+                if (popupsEnabled.value && next.popupPoints > 0) {
+                    clock = now
+                    floaters = floaters + ScoreFloater(
+                        points = next.popupPoints,
+                        tetris = next.clearedLines >= 4,
+                        row = next.popupRow,
+                        born = now,
+                    )
+                }
             }
         }
     }
@@ -158,22 +182,21 @@ fun GameScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            Row(
+            InfoBar(snap, rules, Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp))
+            Box(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                    .padding(horizontal = 2.dp),
             ) {
-                HoldColumn(snap, Modifier.width(72.dp).fillMaxHeight())
                 Canvas(
                     Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+                        .fillMaxSize()
                         .pointerInput(sessionId) { watchField(live, board) },
                 ) {
                     drawField(snap)
                 }
-                StatsColumn(snap, Modifier.width(96.dp).fillMaxHeight())
+                ScoreFloaters(floaters, clock, Modifier.fillMaxSize())
             }
             ControlPad(
                 input = live,
@@ -218,47 +241,99 @@ fun GameScreen(
 }
 
 @Composable
-private fun HoldColumn(snap: GameSnapshot, modifier: Modifier) {
-    Column(modifier.padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Запас", color = Muted, fontSize = 12.sp)
-        MiniPiece(
-            piece = snap.hold,
-            dim = snap.holdUsed,
-            modifier = Modifier
-                .padding(top = 6.dp)
-                .height(72.dp)
-                .fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
-private fun StatsColumn(snap: GameSnapshot, modifier: Modifier) {
-    Column(modifier.padding(start = 6.dp)) {
-        Stat("Счёт", formatScore(snap.score))
-        Stat("Уровень", snap.level.toString())
-        Stat("Линии", snap.lines.toString())
-        Text("Далее", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-        Column(Modifier.weight(1f).fillMaxWidth()) {
+private fun InfoBar(snap: GameSnapshot, rules: GameConfig, modifier: Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (rules.hold) {
+            Column(Modifier.width(52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Запас", color = Muted, fontSize = 11.sp)
+                MiniPiece(
+                    piece = snap.hold,
+                    dim = snap.holdUsed,
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .height(36.dp)
+                        .fillMaxWidth(),
+                )
+            }
+        }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = formatScore(snap.score),
+                color = Paper,
+                fontSize = 20.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "уровень ${snap.level}  ·  линии ${snap.lines}",
+                color = Muted,
+                fontSize = 12.sp,
+            )
+        }
+        Row(Modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
             snap.queue.forEach { piece ->
-                MiniPiece(piece = piece, dim = false, modifier = Modifier.weight(1f).fillMaxWidth())
+                MiniPiece(
+                    piece = piece,
+                    dim = false,
+                    modifier = Modifier
+                        .padding(start = 2.dp)
+                        .width(34.dp)
+                        .fillMaxHeight(),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Stat(label: String, value: String) {
-    Text(label, color = Muted, fontSize = 11.sp)
-    Text(
-        text = value,
-        color = Paper,
-        fontSize = 16.sp,
-        fontFamily = FontFamily.Monospace,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(bottom = 6.dp),
-    )
+private fun ScoreFloaters(floaters: List<ScoreFloater>, now: Long, modifier: Modifier) {
+    if (floaters.isEmpty()) return
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier) {
+        val widthPx = with(density) { maxWidth.toPx() }
+        val heightPx = with(density) { maxHeight.toPx() }
+        val metrics = fieldMetrics(widthPx, heightPx)
+        floaters.forEach { floater ->
+            val age = ((now - floater.born).coerceAtLeast(0L) / 1_000_000f) / (POPUP_LIFE_NS / 1_000_000f)
+            val t = age.coerceIn(0f, 1f)
+            val fade = if (t < 0.4f) 1f else ((1f - t) / 0.6f).coerceIn(0f, 1f)
+            val pop = if (t < 0.12f) 0.72f + 0.28f * (t / 0.12f) else 1f
+            val rise = t * metrics.cell * 1.8f
+            val top = metrics.top + floater.row.coerceIn(0, ROWS - 1) * metrics.cell - rise
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(0, top.roundToInt()) }
+                    .graphicsLayer {
+                        alpha = fade
+                        scaleX = pop
+                        scaleY = pop
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (floater.tetris) {
+                    Text("Тетрис!", color = Amber, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = "+${formatScore(floater.points)}",
+                    color = Paper,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
 }
+
+private data class ScoreFloater(
+    val points: Int,
+    val tetris: Boolean,
+    val row: Int,
+    val born: Long,
+)
+
+private const val POPUP_LIFE_NS = 1_000_000_000L
 
 @Composable
 private fun MiniPiece(piece: Piece?, dim: Boolean, modifier: Modifier) {
@@ -291,21 +366,21 @@ private fun ControlPad(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GameKey("↺", "Против часовой", true, Modifier.weight(1f).height(58.dp), onDown = { input.ccw = true })
-            GameKey("↻", "По часовой", true, Modifier.weight(1f).height(58.dp), onDown = { input.cw = true })
-            GameKey("H", "Запас", holdEnabled, Modifier.weight(1f).height(58.dp), onDown = { input.hold = true })
-            GameKey("II", "Пауза", true, Modifier.weight(1f).height(58.dp), onDown = onPause)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            GameKey("↺", "Против часовой", true, Modifier.weight(1f).height(52.dp), onDown = { input.ccw = true })
+            GameKey("↻", "По часовой", true, Modifier.weight(1f).height(52.dp), onDown = { input.cw = true })
+            GameKey("H", "Запас", holdEnabled, Modifier.weight(1f).height(52.dp), onDown = { input.hold = true })
+            GameKey("II", "Пауза", true, Modifier.weight(1f).height(52.dp), onDown = onPause)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GameKey(
                 "←",
                 "Влево",
                 true,
-                Modifier.weight(1f).height(64.dp),
+                Modifier.weight(1f).height(56.dp),
                 onDown = { input.pressLeft(true) },
                 onUp = { input.pressLeft(false) },
             )
@@ -313,7 +388,7 @@ private fun ControlPad(
                 "↓",
                 "Вниз",
                 true,
-                Modifier.weight(1f).height(64.dp),
+                Modifier.weight(1f).height(56.dp),
                 onDown = { input.soft = true },
                 onUp = { input.soft = false },
             )
@@ -321,11 +396,11 @@ private fun ControlPad(
                 "→",
                 "Вправо",
                 true,
-                Modifier.weight(1f).height(64.dp),
+                Modifier.weight(1f).height(56.dp),
                 onDown = { input.pressRight(true) },
                 onUp = { input.pressRight(false) },
             )
-            GameKey("⤵", "Жёсткий сброс", hardEnabled, Modifier.weight(1f).height(64.dp), onDown = { input.hard = true })
+            GameKey("⤵", "Жёсткий сброс", hardEnabled, Modifier.weight(1f).height(56.dp), onDown = { input.hard = true })
         }
     }
 }

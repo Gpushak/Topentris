@@ -15,6 +15,7 @@ class ScoringTest {
         val snap = engine.frame(0.0, FrameInput(hardDrop = true))
         assertEquals(1, snap.lines)
         assertEquals(1, snap.clearedLines)
+        assertEquals(100, snap.popupPoints)
         assertEquals(100, snap.score)
         assertEquals(Piece.L, snap.cellAt(0, 19))
         assertNull(snap.cellAt(0, 18))
@@ -33,6 +34,7 @@ class ScoringTest {
         val snap = engine.frame(0.0, FrameInput(hardDrop = true))
         assertEquals(4, snap.lines)
         assertEquals(4, snap.clearedLines)
+        assertEquals(800, snap.popupPoints)
         assertEquals(800, snap.score)
         assertEquals(0, snap.cells.count { it != null })
     }

@@ -28,6 +28,7 @@ private enum class Page { MENU, GAME, SETTINGS, RECORDS }
 private data class Session(
     val rules: GameConfig,
     val controls: ControlConfig,
+    val scorePopups: Boolean,
     val id: Int,
 )
 
@@ -72,7 +73,7 @@ fun TopentrisApp(repository: SettingsRepository) {
         when (page) {
             Page.MENU -> MenuScreen(
                 onPlay = {
-                    session = Session(settings.rules, settings.controls, nextId)
+                    session = Session(settings.rules, settings.controls, settings.scorePopups, nextId)
                     nextId += 1
                     page = Page.GAME
                 },
@@ -95,6 +96,7 @@ fun TopentrisApp(repository: SettingsRepository) {
                         repository = repository,
                         soundtrack = soundtrack,
                         effects = effects,
+                        scorePopups = current.scorePopups,
                         onExit = { page = Page.MENU },
                         onRestart = {
                             session = current.copy(id = nextId)

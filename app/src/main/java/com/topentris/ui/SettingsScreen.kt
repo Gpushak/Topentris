@@ -205,6 +205,16 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             }
         }
         Spacer(Modifier.height(18.dp))
+        Section("Экран") {
+            ToggleRow(
+                label = "Всплывающие очки",
+                hint = "Цифра поднимается и гаснет. Если закрыто четыре линии, рядом появляется «Тетрис!».",
+                checked = settings.scorePopups,
+            ) { value ->
+                edit { it.copy(scorePopups = value) }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
         Section("Управление") {
             Text(
                 "По полю ведите палец в сторону — фигура едет за ним, не прыгая под палец. Свайп вниз её не уводит вбок: чтобы зайти в нишу, сдвиньте палец в сторону. Резкий свайп вниз — жёсткий сброс.",

@@ -37,6 +37,9 @@ class GameEngine(
     private var lockedThisAction = false
     private val feedback = linkedSetOf<Feedback>()
     private var clearedLines = 0
+    private var popupPoints = 0
+    private var popupRow = ROWS / 2
+    private var hardDropPoints = 0
 
     init {
         repeat(config.queueSize) { queue.addLast(randomizer.next()) }
@@ -46,6 +49,8 @@ class GameEngine(
     fun frame(dtMillis: Double, input: FrameInput = FrameInput(), softDropMs: Double = 50.0): GameSnapshot {
         feedback.clear()
         clearedLines = 0
+        popupPoints = 0
+        hardDropPoints = 0
         landedThisFrame = false
         if (state != PlayState.PLAYING) return snapshot()
 
@@ -126,6 +131,8 @@ class GameEngine(
             state = state,
             feedback = feedback.toSet(),
             clearedLines = clearedLines,
+            popupPoints = popupPoints,
+            popupRow = popupRow,
         )
     }
 
@@ -222,7 +229,11 @@ class GameEngine(
             distance++
         }
         active = cursor
-        if (config.scoreTable == ScoreTable.GUIDELINE) addScore(distance * 2)
+        if (config.scoreTable == ScoreTable.GUIDELINE) {
+            val bonus = distance * 2
+            addScore(bonus)
+            hardDropPoints = bonus
+        }
         feedback.add(Feedback.HARD_DROP)
         lockPiece()
     }
@@ -347,20 +358,30 @@ class GameEngine(
         }
         val cleared = clearFullRows()
         val scoringLevel = level
-        if (spin) {
-            addScore(tSpinBase(cleared) * scoringLevel)
+        var gained = if (spin) {
+            tSpinBase(cleared) * scoringLevel
         } else if (cleared > 0) {
-            addScore(lineBase(cleared, scoringLevel))
+            lineBase(cleared, scoringLevel)
+        } else {
+            0
         }
         if (cleared > 0) {
             combo += 1
             if (config.scoreTable == ScoreTable.GUIDELINE && combo > 0) {
-                addScore(50 * combo * scoringLevel)
+                gained += 50 * combo * scoringLevel
             }
             lines += cleared
             level = config.startLevel + lines / 10
         } else {
             combo = -1
+        }
+        addScore(gained)
+        if (gained > 0) popupPoints = gained + hardDropPoints
+        popupRow = if (cleared > 0) {
+            clearedAnchor
+        } else {
+            val rows = cellsOf(piece).map { it.y }.filter { it in 0 until ROWS }
+            if (rows.isEmpty()) ROWS / 2 else rows.sum() / rows.size
         }
         clearedLines = cleared
         feedback.add(Feedback.LOCK)
@@ -373,12 +394,15 @@ class GameEngine(
         spawn(keepHoldUsed = false)
     }
 
+    private var clearedAnchor = ROWS / 2
+
     private fun clearFullRows(): Int {
         val full = mutableListOf<Int>()
         for (y in -buffer until ROWS) {
             if ((0 until COLS).all { x -> grid[y + buffer][x] != null }) full.add(y)
         }
         if (full.isEmpty()) return 0
+        clearedAnchor = full.sum() / full.size
         val kept = mutableListOf<Triple<Int, Int, Piece>>()
         for (y in -buffer until ROWS) {
             if (y in full) continue

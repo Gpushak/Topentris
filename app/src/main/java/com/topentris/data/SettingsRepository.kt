@@ -97,6 +97,7 @@ class SettingsRepository(private val context: Context) {
             controls,
             music = this[Keys.music] ?: true,
             volume = (this[Keys.volume] ?: 80).coerceIn(0, 100),
+            scorePopups = this[Keys.scorePopups] ?: true,
         )
     }
 
@@ -117,6 +118,7 @@ class SettingsRepository(private val context: Context) {
         this[Keys.vibration] = settings.controls.vibration
         this[Keys.music] = settings.music
         this[Keys.volume] = settings.volume.coerceIn(0, 100)
+        this[Keys.scorePopups] = settings.scorePopups
     }
 
     private fun Preferences.scores(preset: Preset): List<Int> {
@@ -150,6 +152,7 @@ class SettingsRepository(private val context: Context) {
         val vibration = booleanPreferencesKey("vibration")
         val music = booleanPreferencesKey("music")
         val volume = intPreferencesKey("volume")
+        val scorePopups = booleanPreferencesKey("score_popups")
         val authorDefault = booleanPreferencesKey("author_default")
     }
 }

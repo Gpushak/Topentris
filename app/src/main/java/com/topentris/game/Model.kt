@@ -37,6 +37,8 @@ data class GameSnapshot(
     val state: PlayState,
     val feedback: Set<Feedback>,
     val clearedLines: Int = 0,
+    val popupPoints: Int = 0,
+    val popupRow: Int = 0,
 ) {
     fun cellAt(x: Int, y: Int): Piece? = cells[y * COLS + x]
 }

@@ -114,4 +114,5 @@ data class Settings(
     val controls: ControlConfig = ControlConfig(),
     val music: Boolean = true,
     val volume: Int = 80,
+    val scorePopups: Boolean = true,
 )
