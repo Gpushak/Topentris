@@ -4,13 +4,18 @@ fun interface Randomizer {
     fun next(): Piece
 }
 
-class BagRandomizer(private val nextInt: (Int) -> Int) : Randomizer {
-    private val bag = ArrayDeque<Piece>()
+class BagRandomizer(
+    pending: List<Piece> = emptyList(),
+    private val nextInt: (Int) -> Int,
+) : Randomizer {
+    private val bag = ArrayDeque(pending)
 
     override fun next(): Piece {
         if (bag.isEmpty()) refill()
         return bag.removeFirst()
     }
+
+    fun pending(): List<Piece> = bag.toList()
 
     private fun refill() {
         val items = Piece.entries.toMutableList()
@@ -25,8 +30,13 @@ class BagRandomizer(private val nextInt: (Int) -> Int) : Randomizer {
 }
 
 /** NES-style: one reroll when the draw matches the previous piece. The second draw is kept. */
-class RerollRandomizer(private val nextInt: (Int) -> Int) : Randomizer {
-    private var previous: Piece? = null
+class RerollRandomizer(
+    startPrevious: Piece? = null,
+    private val nextInt: (Int) -> Int,
+) : Randomizer {
+    private var previous: Piece? = startPrevious
+
+    fun previousPiece(): Piece? = previous
 
     override fun next(): Piece {
         val pieces = Piece.entries

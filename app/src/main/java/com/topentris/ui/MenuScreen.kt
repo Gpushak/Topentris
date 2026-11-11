@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun MenuScreen(
     onPlay: () -> Unit,
+    onContinue: (() -> Unit)?,
     onSettings: () -> Unit,
     onRecords: () -> Unit,
 ) {
@@ -39,7 +40,13 @@ fun MenuScreen(
             fontSize = 16.sp,
         )
         Spacer(Modifier.height(36.dp))
-        Plate(label = "Играть", accent = true, onClick = onPlay)
+        if (onContinue != null) {
+            Plate(label = "Продолжить", accent = true, onClick = onContinue)
+            Spacer(Modifier.height(12.dp))
+            Plate(label = "Новая игра", onClick = onPlay)
+        } else {
+            Plate(label = "Играть", accent = true, onClick = onPlay)
+        }
         Spacer(Modifier.height(12.dp))
         Plate(label = "Настройки", onClick = onSettings)
         Spacer(Modifier.height(12.dp))

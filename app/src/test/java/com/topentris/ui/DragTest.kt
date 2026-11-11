@@ -71,4 +71,11 @@ class DragTest {
         assertEquals(false, shouldHardFlick(80f, 6f, 40L, cell))
         assertEquals(true, shouldHardFlick(80f, 36f, 20L, cell))
     }
+
+    @Test
+    fun tapOnTheLeftTurnsTheOtherWay() {
+        assertEquals(false, tapIsClockwise(x = 10f, mid = 40f, split = true))
+        assertEquals(true, tapIsClockwise(x = 40f, mid = 40f, split = true))
+        assertEquals(true, tapIsClockwise(x = 10f, mid = 40f, split = false))
+    }
 }

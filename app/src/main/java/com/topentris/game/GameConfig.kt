@@ -115,4 +115,6 @@ data class Settings(
     val music: Boolean = true,
     val volume: Int = 80,
     val scorePopups: Boolean = true,
+    val splitRotate: Boolean = true,
+    val showButtons: Boolean = true,
 )

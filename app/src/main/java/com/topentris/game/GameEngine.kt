@@ -9,13 +9,14 @@ import kotlin.math.pow
 class GameEngine(
     val config: GameConfig,
     private val nextInt: (Int) -> Int = { bound -> kotlin.random.Random.nextInt(bound) },
+    restored: MatchSave? = null,
 ) {
     private val buffer = 8
     private val grid = Array(ROWS + buffer) { arrayOfNulls<Piece>(COLS) }
     private val queue = ArrayDeque<Piece>()
     private val randomizer: Randomizer = when (config.generator) {
-        Generator.BAG -> BagRandomizer(nextInt)
-        Generator.REROLL -> RerollRandomizer(nextInt)
+        Generator.BAG -> BagRandomizer(pending = restored?.bag.orEmpty(), nextInt = nextInt)
+        Generator.REROLL -> RerollRandomizer(startPrevious = restored?.rerollPrevious, nextInt = nextInt)
         Generator.UNIFORM -> UniformRandomizer(nextInt)
     }
 
@@ -42,8 +43,69 @@ class GameEngine(
     private var hardDropPoints = 0
 
     init {
-        repeat(config.queueSize) { queue.addLast(randomizer.next()) }
-        spawn(keepHoldUsed = false)
+        if (restored == null) {
+            repeat(config.queueSize) { queue.addLast(randomizer.next()) }
+            spawn(keepHoldUsed = false)
+        } else {
+            restore(restored)
+        }
+    }
+
+    fun capture(controls: ControlConfig = ControlConfig()): MatchSave {
+        val rows = ArrayList<String>(ROWS + buffer)
+        for (y in -buffer until ROWS) {
+            rows += (0 until COLS).joinToString("") { x ->
+                grid[y + buffer][x]?.name ?: "."
+            }
+        }
+        val piece = active
+        return MatchSave(
+            rules = config,
+            controls = controls,
+            score = score,
+            lines = lines,
+            level = level,
+            combo = combo,
+            paused = state == PlayState.PAUSED,
+            lastRotation = lastRotation,
+            locking = locking,
+            lockMs = lockMs,
+            lockResets = lockResets,
+            dropMs = dropMs,
+            softMs = softMs,
+            hold = holdPiece,
+            holdUsed = holdUsed,
+            active = piece?.let { ActiveState(it.type, it.rotation, it.x, it.y) },
+            queue = queue.toList(),
+            bag = (randomizer as? BagRandomizer)?.pending().orEmpty(),
+            rerollPrevious = (randomizer as? RerollRandomizer)?.previousPiece(),
+            grid = rows,
+        )
+    }
+
+    private fun restore(saved: MatchSave) {
+        saved.grid.forEachIndexed { row, cells ->
+            cells.forEachIndexed { x, char ->
+                grid[row][x] = if (char == '.') null else Piece.entries.first { it.name == char.toString() }
+            }
+        }
+        queue.clear()
+        queue.addAll(saved.queue)
+        val piece = saved.active
+        active = piece?.let { Active(it.type, it.rotation, it.x, it.y) }
+        holdPiece = saved.hold
+        holdUsed = saved.holdUsed
+        score = saved.score
+        lines = saved.lines
+        level = saved.level
+        combo = saved.combo
+        state = if (saved.paused) PlayState.PAUSED else PlayState.PLAYING
+        lastRotation = saved.lastRotation
+        locking = saved.locking
+        lockMs = saved.lockMs
+        lockResets = saved.lockResets
+        dropMs = saved.dropMs
+        softMs = saved.softMs
     }
 
     fun frame(dtMillis: Double, input: FrameInput = FrameInput(), softDropMs: Double = 50.0): GameSnapshot {

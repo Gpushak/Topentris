@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.topentris.game.ControlConfig
 import com.topentris.game.GameConfig
 import com.topentris.game.Generator
+import com.topentris.game.MatchSave
 import com.topentris.game.Preset
 import com.topentris.game.RotationSystem
 import com.topentris.game.ScoreTable
@@ -24,6 +25,18 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<Settings> = context.store.data.map { it.toSettings() }
     val records: Flow<Map<Preset, List<Int>>> = context.store.data.map { prefs ->
         Preset.entries.associateWith { prefs.scores(it) }
+    }
+
+    val savedMatch: Flow<MatchSave?> = context.store.data.map { prefs ->
+        prefs[Keys.savedMatch]?.let { MatchSave.decode(it) }
+    }
+
+    suspend fun saveMatch(save: MatchSave) {
+        context.store.edit { prefs -> prefs[Keys.savedMatch] = save.encode() }
+    }
+
+    suspend fun clearMatch() {
+        context.store.edit { prefs -> prefs.remove(Keys.savedMatch) }
     }
 
     suspend fun update(transform: (Settings) -> Settings) {
@@ -98,6 +111,8 @@ class SettingsRepository(private val context: Context) {
             music = this[Keys.music] ?: true,
             volume = (this[Keys.volume] ?: 80).coerceIn(0, 100),
             scorePopups = this[Keys.scorePopups] ?: true,
+            splitRotate = this[Keys.splitRotate] ?: true,
+            showButtons = this[Keys.showButtons] ?: true,
         )
     }
 
@@ -119,6 +134,8 @@ class SettingsRepository(private val context: Context) {
         this[Keys.music] = settings.music
         this[Keys.volume] = settings.volume.coerceIn(0, 100)
         this[Keys.scorePopups] = settings.scorePopups
+        this[Keys.splitRotate] = settings.splitRotate
+        this[Keys.showButtons] = settings.showButtons
     }
 
     private fun Preferences.scores(preset: Preset): List<Int> {
@@ -153,6 +170,9 @@ class SettingsRepository(private val context: Context) {
         val music = booleanPreferencesKey("music")
         val volume = intPreferencesKey("volume")
         val scorePopups = booleanPreferencesKey("score_popups")
+        val splitRotate = booleanPreferencesKey("split_rotate")
+        val showButtons = booleanPreferencesKey("show_buttons")
+        val savedMatch = stringPreferencesKey("saved_match")
         val authorDefault = booleanPreferencesKey("author_default")
     }
 }

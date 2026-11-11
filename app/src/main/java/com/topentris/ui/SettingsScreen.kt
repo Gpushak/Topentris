@@ -18,7 +18,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +45,17 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
         scope.launch { repository.update(transform) }
     }
     val rules = settings.rules
+    var openSection by remember { mutableStateOf<String?>(null) }
+
+    @Composable
+    fun Fold(title: String, content: @Composable () -> Unit) {
+        Section(
+            title = title,
+            expanded = openSection == title,
+            onToggle = { openSection = if (openSection == title) null else title },
+            content = content,
+        )
+    }
 
     Column(
         Modifier
@@ -51,7 +65,7 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
     ) {
         Text("Настройки", color = Paper, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
-        Section("Пресет") {
+        Fold("Пресет") {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -89,7 +103,7 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             )
         }
         Spacer(Modifier.height(18.dp))
-        Section("Правила") {
+        Fold("Правила") {
             Text(
                 "Готовый набор сверху. Если изменить пункт здесь, набор станет «Свои».",
                 color = Muted,
@@ -186,7 +200,7 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             }
         }
         Spacer(Modifier.height(18.dp))
-        Section("Звук") {
+        Fold("Звук") {
             ToggleRow(
                 label = "Музыка",
                 hint = "Саундтрек в меню и во время партии. На паузе и когда игра свёрнута — тихо.",
@@ -205,7 +219,7 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             }
         }
         Spacer(Modifier.height(18.dp))
-        Section("Экран") {
+        Fold("Экран") {
             ToggleRow(
                 label = "Всплывающие очки",
                 hint = "Цифра поднимается и гаснет. Если закрыто четыре линии, рядом появляется «Тетрис!».",
@@ -215,12 +229,26 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             }
         }
         Spacer(Modifier.height(18.dp))
-        Section("Управление") {
+        Fold("Управление") {
             Text(
                 "По полю ведите палец в сторону — фигура едет за ним, не прыгая под палец. Свайп вниз её не уводит вбок: чтобы зайти в нишу, сдвиньте палец в сторону. Резкий свайп вниз — жёсткий сброс.",
                 color = Muted,
                 fontSize = 13.sp,
             )
+            ToggleRow(
+                label = "Кнопки снизу",
+                hint = "Стрелки, повороты и сброс. Пауза и запас, если он включён, остаются.",
+                checked = settings.showButtons,
+            ) { value ->
+                edit { it.copy(showButtons = value) }
+            }
+            ToggleRow(
+                label = "Поворот по сторонам",
+                hint = "Короткое касание слева крутит против часовой, справа — по часовой. Если выключить, любое касание крутит по часовой.",
+                checked = settings.splitRotate,
+            ) { value ->
+                edit { it.copy(splitRotate = value) }
+            }
             SliderRow(
                 title = "Пауза перед автосдвигом",
                 valueLabel = "${settings.controls.dasMs} мс",

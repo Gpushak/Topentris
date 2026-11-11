@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -68,10 +69,14 @@ import com.topentris.game.FrameInput
 import com.topentris.game.GameConfig
 import com.topentris.game.GameEngine
 import com.topentris.game.GameSnapshot
+import com.topentris.game.MatchSave
 import com.topentris.game.Piece
 import com.topentris.game.PlayState
 import com.topentris.game.ROWS
 import com.topentris.game.Rotation
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -84,17 +89,24 @@ fun GameScreen(
     soundtrack: Soundtrack,
     effects: Effects,
     scorePopups: Boolean,
+    splitRotate: Boolean,
+    showButtons: Boolean,
+    resume: MatchSave?,
     onExit: () -> Unit,
     onRestart: () -> Unit,
 ) {
     val context = LocalContext.current
-    val engine = remember(sessionId) { GameEngine(rules) }
+    val scope = rememberCoroutineScope()
+    val engine = remember(sessionId) {
+        if (resume == null) GameEngine(rules) else GameEngine(rules, restored = resume)
+    }
     val live = remember(sessionId) { LiveInput() }
     val das = remember(sessionId) { DasController() }
     var snap by remember(sessionId) { mutableStateOf(engine.snapshot()) }
-    val board = remember(sessionId) { BoardRef(rules, snap) }
+    val board = remember(sessionId) { BoardRef(rules, snap, splitRotate) }
     board.rules = rules
     board.snap = snap
+    board.splitRotate = splitRotate
     val controlsState = rememberUpdatedState(controls)
     val popupsEnabled = rememberUpdatedState(scorePopups)
     var floaters by remember(sessionId) { mutableStateOf(emptyList<ScoreFloater>()) }
@@ -109,6 +121,14 @@ fun GameScreen(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    fun persist() {
+        scope.launch {
+            withContext(NonCancellable) {
+                if (engine.playState == PlayState.GAME_OVER) repository.clearMatch()
+                else repository.saveMatch(engine.capture(controls))
+            }
+        }
+    }
     DisposableEffect(lifecycleOwner, engine) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE && engine.playState == PlayState.PLAYING) {
@@ -116,6 +136,7 @@ fun GameScreen(
                 snap = engine.snapshot()
                 board.snap = snap
             }
+            if (event == Lifecycle.Event.ON_PAUSE) persist()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -166,6 +187,17 @@ fun GameScreen(
         if (snap.state == PlayState.GAME_OVER && !scoreSent) {
             scoreSent = true
             recordPlace = repository.submitScore(rules.preset, snap.score)
+            repository.clearMatch()
+        }
+    }
+
+    fun leave() {
+        scope.launch {
+            withContext(NonCancellable) {
+                if (engine.playState == PlayState.GAME_OVER) repository.clearMatch()
+                else repository.saveMatch(engine.capture(controls))
+            }
+            onExit()
         }
     }
 
@@ -175,8 +207,9 @@ fun GameScreen(
                 engine.pause()
                 snap = engine.snapshot()
                 board.snap = snap
+                persist()
             }
-            else -> onExit()
+            else -> leave()
         }
     }
 
@@ -202,10 +235,12 @@ fun GameScreen(
                 input = live,
                 hardEnabled = rules.hardDrop,
                 holdEnabled = rules.hold,
+                showButtons = showButtons,
                 onPause = {
                     engine.pause()
                     snap = engine.snapshot()
                     board.snap = snap
+                    persist()
                 },
             )
         }
@@ -217,7 +252,7 @@ fun GameScreen(
                     board.snap = snap
                 })
                 Plate(label = "Заново", onClick = onRestart)
-                Plate(label = "В меню", onClick = onExit)
+                Plate(label = "В меню", onClick = { leave() })
             }
         } else if (snap.state == PlayState.GAME_OVER) {
             val place = recordPlace
@@ -234,7 +269,7 @@ fun GameScreen(
             }
             Overlay(title = "Конец партии", detail = detail) {
                 Plate(label = "Заново", accent = true, onClick = onRestart)
-                Plate(label = "В меню", onClick = onExit)
+                Plate(label = "В меню", onClick = { leave() })
             }
         }
     }
@@ -361,8 +396,23 @@ private fun ControlPad(
     input: LiveInput,
     hardEnabled: Boolean,
     holdEnabled: Boolean,
+    showButtons: Boolean,
     onPause: () -> Unit,
 ) {
+    if (!showButtons) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (holdEnabled) {
+                GameKey("H", "Запас", true, Modifier.weight(1f).height(48.dp), onDown = { input.hold = true })
+            }
+            GameKey("II", "Пауза", true, Modifier.weight(1f).height(48.dp), onDown = onPause)
+        }
+        return
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -631,13 +681,19 @@ internal fun shouldHardFlick(
     return instantDownPx / instantDtMs.toFloat() >= cellPx / 80f
 }
 
+/** A short tap on the right half turns clockwise. The left half turns the other way when [split] is on. */
+internal fun tapIsClockwise(x: Float, mid: Float, split: Boolean): Boolean {
+    if (!split) return true
+    return x >= mid
+}
+
 private fun pieceCenter(snap: GameSnapshot): Int {
     val cells = snap.active
     if (cells.isEmpty()) return COLS / 2
     return (cells.minOf { it.x } + cells.maxOf { it.x }) / 2
 }
 
-private class BoardRef(var rules: GameConfig, var snap: GameSnapshot)
+private class BoardRef(var rules: GameConfig, var snap: GameSnapshot, var splitRotate: Boolean)
 
 private class LiveInput {
     var left = false
@@ -720,7 +776,11 @@ private suspend fun PointerInputScope.watchField(input: LiveInput, board: BoardR
         var aiming = false
         var sideways = SidewaysIntent(1f)
         fun release(rotateIfTap: Boolean) {
-            if (rotateIfTap && !steered && !flung) input.cw = true
+            if (rotateIfTap && !steered && !flung) {
+                val metrics = fieldMetrics(size.width.toFloat(), size.height.toFloat())
+                val mid = metrics.left + metrics.cell * COLS / 2f
+                if (tapIsClockwise(start.x, mid, board.splitRotate)) input.cw = true else input.ccw = true
+            }
             pointer = null
             steered = false
             flung = false
