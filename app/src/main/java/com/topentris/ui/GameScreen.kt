@@ -75,6 +75,7 @@ import com.topentris.game.PlayState
 import com.topentris.game.ROWS
 import com.topentris.game.Rotation
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -103,6 +104,9 @@ fun GameScreen(
     val live = remember(sessionId) { LiveInput() }
     val das = remember(sessionId) { DasController() }
     var snap by remember(sessionId) { mutableStateOf(engine.snapshot()) }
+    var resumeSeconds by remember(sessionId) { mutableStateOf<Int?>(null) }
+    val countingDown = resumeSeconds != null
+    val playing = snap.state == PlayState.PLAYING
     val board = remember(sessionId) { BoardRef(rules, snap, splitRotate) }
     board.rules = rules
     board.snap = snap
@@ -129,17 +133,39 @@ fun GameScreen(
             }
         }
     }
+    fun refreshSnapshot() {
+        snap = engine.snapshot()
+        board.snap = snap
+    }
+    fun pauseMatch() {
+        engine.pause()
+        resumeSeconds = null
+        live.clear()
+        das.reset()
+        refreshSnapshot()
+    }
     DisposableEffect(lifecycleOwner, engine) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE && engine.playState == PlayState.PLAYING) {
-                engine.pause()
-                snap = engine.snapshot()
-                board.snap = snap
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                if (engine.playState != PlayState.GAME_OVER) pauseMatch()
+                persist()
             }
-            if (event == Lifecycle.Event.ON_PAUSE) persist()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(engine, countingDown) {
+        if (!countingDown) return@LaunchedEffect
+        for (seconds in 2 downTo 0) {
+            delay(1_000)
+            if (resumeSeconds == null) return@LaunchedEffect
+            if (seconds > 0) resumeSeconds = seconds
+        }
+        live.clear()
+        engine.resume()
+        refreshSnapshot()
+        resumeSeconds = null
     }
 
     LaunchedEffect(engine) {
@@ -202,14 +228,11 @@ fun GameScreen(
     }
 
     BackHandler {
-        when (engine.playState) {
-            PlayState.PLAYING -> {
-                engine.pause()
-                snap = engine.snapshot()
-                board.snap = snap
-                persist()
-            }
-            else -> leave()
+        if (engine.playState == PlayState.PLAYING || resumeSeconds != null) {
+            pauseMatch()
+            persist()
+        } else {
+            leave()
         }
     }
 
@@ -225,7 +248,7 @@ fun GameScreen(
                 Canvas(
                     Modifier
                         .fillMaxSize()
-                        .pointerInput(sessionId) { watchField(live, board) },
+                        .pointerInput(sessionId, playing) { if (playing) watchField(live, board) },
                 ) {
                     drawField(snap)
                 }
@@ -237,20 +260,17 @@ fun GameScreen(
                 holdEnabled = rules.hold,
                 showButtons = showButtons,
                 onPause = {
-                    engine.pause()
-                    snap = engine.snapshot()
-                    board.snap = snap
+                    pauseMatch()
                     persist()
                 },
             )
         }
-        if (snap.state == PlayState.PAUSED) {
+        val seconds = resumeSeconds
+        if (seconds != null) {
+            ResumeCountdown(seconds)
+        } else if (snap.state == PlayState.PAUSED) {
             Overlay(title = "Пауза", detail = "Партия на паузе") {
-                Plate(label = "Продолжить", accent = true, onClick = {
-                    engine.resume()
-                    snap = engine.snapshot()
-                    board.snap = snap
-                })
+                Plate(label = "Продолжить", accent = true, onClick = { resumeSeconds = 3 })
                 Plate(label = "Заново", onClick = onRestart)
                 Plate(label = "В меню", onClick = { leave() })
             }
@@ -521,25 +541,24 @@ private fun GameKey(
 }
 
 @Composable
+private fun ResumeCountdown(seconds: Int) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        BlockingScrim()
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Продолжение через", color = Paper, fontSize = 18.sp)
+            Text("$seconds", color = Amber, fontSize = 64.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun Overlay(
     title: String,
     detail: String,
     actions: @Composable () -> Unit,
 ) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xC0101218))
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            event.changes.forEach { it.consume() }
-                        }
-                    }
-                },
-        )
+        BlockingScrim()
         Column(
             Modifier
                 .padding(horizontal = 28.dp)
@@ -553,6 +572,23 @@ private fun Overlay(
             actions()
         }
     }
+}
+
+@Composable
+private fun BlockingScrim() {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xC0101218))
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            },
+    )
 }
 
 private fun DrawScope.drawField(snap: GameSnapshot) {
@@ -729,6 +765,19 @@ private class LiveInput {
     fun resetGestureDrop() {
         aimedCells = 0
         pendingCells = 0
+    }
+
+    fun clear() {
+        left = false
+        right = false
+        soft = false
+        drag = null
+        hard = false
+        cw = false
+        ccw = false
+        hold = false
+        recent = 0
+        resetGestureDrop()
     }
 
     fun consume(das: DasController, dtMs: Double, controls: ControlConfig): FrameInput {

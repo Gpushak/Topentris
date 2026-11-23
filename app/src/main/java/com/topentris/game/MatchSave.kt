@@ -112,7 +112,7 @@ private fun activeOrNull(raw: String): ActiveState? {
     )
 }
 
-private fun encodeRules(rules: GameConfig): String = listOf(
+internal fun encodeRules(rules: GameConfig): String = listOf(
     rules.preset.name,
     rules.rotation.name,
     bit(rules.twoStateSz),
@@ -126,7 +126,7 @@ private fun encodeRules(rules: GameConfig): String = listOf(
     rules.scoreTable.name,
 ).joinToString(",")
 
-private fun decodeRules(raw: String): GameConfig {
+internal fun decodeRules(raw: String): GameConfig {
     val parts = raw.split(',')
     return GameConfig(
         preset = enumValueOf(parts[0]),
@@ -143,10 +143,10 @@ private fun decodeRules(raw: String): GameConfig {
     )
 }
 
-private fun encodeControls(controls: ControlConfig): String =
+internal fun encodeControls(controls: ControlConfig): String =
     listOf(controls.dasMs, controls.arrMs, controls.softDropMs, bit(controls.vibration)).joinToString(",")
 
-private fun decodeControls(raw: String): ControlConfig {
+internal fun decodeControls(raw: String): ControlConfig {
     val parts = raw.split(',')
     return ControlConfig(
         dasMs = parts[0].toInt(),

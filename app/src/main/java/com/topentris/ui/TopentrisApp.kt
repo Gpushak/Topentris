@@ -23,7 +23,7 @@ import com.topentris.data.SettingsRepository
 import com.topentris.game.ControlConfig
 import com.topentris.game.GameConfig
 import com.topentris.game.MatchSave
-import com.topentris.game.Settings
+import com.topentris.game.SettingsState
 import kotlinx.coroutines.launch
 
 private enum class Page { MENU, GAME, SETTINGS, RECORDS }
@@ -40,7 +40,8 @@ private data class Session(
 
 @Composable
 fun TopentrisApp(repository: SettingsRepository) {
-    val settings by repository.settings.collectAsState(initial = Settings())
+    val settingsState by repository.settings.collectAsState(initial = SettingsState())
+    val settings = settingsState.settings
     val saved by repository.savedMatch.collectAsState(initial = null)
     var page by remember { mutableStateOf(Page.MENU) }
     var session by remember { mutableStateOf<Session?>(null) }
@@ -71,10 +72,12 @@ fun TopentrisApp(repository: SettingsRepository) {
     LaunchedEffect(Unit) {
         repository.applyAuthorDefaultOnce()
     }
-    LaunchedEffect(settings.music, settings.volume) {
+    LaunchedEffect(settings.music, settings.musicVolume) {
+        soundtrack.setVolume(settings.musicVolume / 100f)
         soundtrack.setEnabled(settings.music)
-        soundtrack.setVolume(settings.volume / 100f)
-        effects.setVolume(settings.volume / 100f)
+    }
+    LaunchedEffect(settings.sfxVolume) {
+        effects.setVolume(settings.sfxVolume / 100f)
     }
 
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -142,7 +145,12 @@ fun TopentrisApp(repository: SettingsRepository) {
                 }
             }
             Page.SETTINGS -> SettingsScreen(
-                repository = repository,
+                state = settingsState,
+                edit = { transform -> scope.launch { repository.update(transform) } },
+                onSelectBuiltIn = { preset -> scope.launch { repository.selectBuiltIn(preset) } },
+                onSelectSaved = { name -> scope.launch { repository.selectSavedPreset(name) } },
+                onSave = { name -> scope.launch { repository.savePreset(name) } },
+                onDelete = { name -> scope.launch { repository.deletePreset(name) } },
                 onBack = { page = Page.MENU },
             )
             Page.RECORDS -> RecordsScreen(

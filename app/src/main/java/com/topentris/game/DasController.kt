@@ -42,7 +42,7 @@ class DasController {
         return steps
     }
 
-    private fun reset() {
+    fun reset() {
         direction = 0
         charged = false
         elapsedMs = 0.0

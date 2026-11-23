@@ -2,6 +2,7 @@ package com.topentris.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,46 +12,53 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.topentris.data.SettingsRepository
-import com.topentris.game.ControlConfig
-import com.topentris.game.GameConfig
 import com.topentris.game.Generator
 import com.topentris.game.Preset
 import com.topentris.game.RotationSystem
 import com.topentris.game.ScoreTable
 import com.topentris.game.Settings
-import kotlinx.coroutines.launch
+import com.topentris.game.SettingsState
 
 @Composable
-fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
-    val settings by repository.settings.collectAsState(initial = Settings())
-    val scope = rememberCoroutineScope()
-    fun edit(transform: (Settings) -> Settings) {
-        scope.launch { repository.update(transform) }
-    }
+fun SettingsScreen(
+    state: SettingsState,
+    edit: ((Settings) -> Settings) -> Unit,
+    onSelectBuiltIn: (Preset) -> Unit,
+    onSelectSaved: (String) -> Unit,
+    onSave: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    val settings = state.settings
     val rules = settings.rules
+    val activePresetName = state.activeSavedPreset?.name ?: presetTitle(state.activeBuiltIn ?: Preset.CUSTOM)
     var openSection by remember { mutableStateOf<String?>(null) }
 
     @Composable
-    fun Fold(title: String, content: @Composable () -> Unit) {
+    fun Fold(title: String, summary: String? = null, content: @Composable () -> Unit) {
         Section(
-            title = title,
+            title = if (summary == null) title else "$title · $summary",
             expanded = openSection == title,
             onToggle = { openSection = if (openSection == title) null else title },
             content = content,
@@ -65,60 +73,21 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
     ) {
         Text("Настройки", color = Paper, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
-        Fold("Пресет") {
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Preset.entries.forEach { preset ->
-                    ChoiceChip(
-                        text = presetTitle(preset),
-                        selected = rules.preset == preset,
-                        onClick = {
-                            edit { current ->
-                                when (preset) {
-                                    Preset.CUSTOM -> current.copy(rules = current.rules.asCustom())
-                                    Preset.AUTHOR -> current.copy(
-                                        rules = GameConfig.author(),
-                                        controls = ControlConfig(
-                                            dasMs = 133,
-                                            arrMs = 0,
-                                            softDropMs = 99,
-                                            vibration = true,
-                                        ),
-                                        music = true,
-                                    )
-                                    else -> current.copy(rules = GameConfig.of(preset))
-                                }
-                            }
-                        },
-                    )
-                }
-            }
-            Text(
-                text = presetBlurb(rules),
-                color = Muted,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+        Fold("Пресет", summary = activePresetName) {
+            PresetSettings(state, onSelectBuiltIn, onSelectSaved, onSave, onDelete)
         }
         Spacer(Modifier.height(18.dp))
         Fold("Правила") {
-            Text(
-                "Готовый набор сверху. Если изменить пункт здесь, набор станет «Свои».",
-                color = Muted,
-                fontSize = 13.sp,
-            )
             RuleBlock(
                 title = "Поворот у стены",
                 hint = "Современный сдвигает фигуру и всё равно поворачивает. Классический отменяет поворот, если она не влезает.",
             ) {
                 ChipRow {
                     ChoiceChip("Современный", rules.rotation == RotationSystem.SRS) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(rotation = RotationSystem.SRS)) }
+                        edit { it.copy(rules = it.rules.copy(rotation = RotationSystem.SRS)) }
                     }
                     ChoiceChip("Классический", rules.rotation == RotationSystem.CLASSIC) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(rotation = RotationSystem.CLASSIC)) }
+                        edit { it.copy(rules = it.rules.copy(rotation = RotationSystem.CLASSIC)) }
                     }
                 }
             }
@@ -128,13 +97,13 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             ) {
                 ChipRow {
                     ChoiceChip("Все семь по очереди", rules.generator == Generator.BAG) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(generator = Generator.BAG)) }
+                        edit { it.copy(rules = it.rules.copy(generator = Generator.BAG)) }
                     }
                     ChoiceChip("Реже повтор", rules.generator == Generator.REROLL) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(generator = Generator.REROLL)) }
+                        edit { it.copy(rules = it.rules.copy(generator = Generator.REROLL)) }
                     }
                     ChoiceChip("Как повезёт", rules.generator == Generator.UNIFORM) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(generator = Generator.UNIFORM)) }
+                        edit { it.copy(rules = it.rules.copy(generator = Generator.UNIFORM)) }
                     }
                 }
             }
@@ -144,10 +113,10 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             ) {
                 ChipRow {
                     ChoiceChip("Одна", rules.queueSize == 1) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(queueSize = 1)) }
+                        edit { it.copy(rules = it.rules.copy(queueSize = 1)) }
                     }
                     ChoiceChip("Пять", rules.queueSize == 5) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(queueSize = 5)) }
+                        edit { it.copy(rules = it.rules.copy(queueSize = 5)) }
                     }
                 }
             }
@@ -157,10 +126,10 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             ) {
                 ChipRow {
                     ChoiceChip("Сразу", rules.lockDelayMs == 0) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(lockDelayMs = 0, maxLockResets = 0)) }
+                        edit { it.copy(rules = it.rules.copy(lockDelayMs = 0, maxLockResets = 0)) }
                     }
                     ChoiceChip("Можно подвинуть", rules.lockDelayMs > 0) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(lockDelayMs = 500, maxLockResets = 15)) }
+                        edit { it.copy(rules = it.rules.copy(lockDelayMs = 500, maxLockResets = 15)) }
                     }
                 }
             }
@@ -170,10 +139,10 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             ) {
                 ChipRow {
                     ChoiceChip("Классический", rules.scoreTable == ScoreTable.CLASSIC) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(scoreTable = ScoreTable.CLASSIC)) }
+                        edit { it.copy(rules = it.rules.copy(scoreTable = ScoreTable.CLASSIC)) }
                     }
                     ChoiceChip("Современный", rules.scoreTable == ScoreTable.GUIDELINE) {
-                        edit { it.copy(rules = it.rules.asCustom().copy(scoreTable = ScoreTable.GUIDELINE)) }
+                        edit { it.copy(rules = it.rules.copy(scoreTable = ScoreTable.GUIDELINE)) }
                     }
                 }
             }
@@ -182,21 +151,21 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
                 hint = "Отложить фигуру и вернуть её позже. Кнопка H и свайп вверх.",
                 checked = rules.hold,
             ) { value ->
-                edit { it.copy(rules = it.rules.asCustom().copy(hold = value)) }
+                edit { it.copy(rules = it.rules.copy(hold = value)) }
             }
             ToggleRow(
                 label = "Призрак",
                 hint = "Показывает, куда фигура упадёт.",
                 checked = rules.ghost,
             ) { value ->
-                edit { it.copy(rules = it.rules.asCustom().copy(ghost = value)) }
+                edit { it.copy(rules = it.rules.copy(ghost = value)) }
             }
             ToggleRow(
                 label = "Жёсткий сброс",
                 hint = "Резкий свайп вниз роняет фигуру до конца. Медленный свайп опускает её плавно.",
                 checked = rules.hardDrop,
             ) { value ->
-                edit { it.copy(rules = it.rules.asCustom().copy(hardDrop = value)) }
+                edit { it.copy(rules = it.rules.copy(hardDrop = value)) }
             }
         }
         Spacer(Modifier.height(18.dp))
@@ -209,13 +178,20 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
                 edit { it.copy(music = value) }
             }
             SliderRow(
-                title = "Громкость",
-                valueLabel = "${settings.volume}%",
-                hint = "Музыка и звуки фигур.",
-                value = settings.volume,
+                title = "Громкость музыки",
+                valueLabel = "${settings.musicVolume}%",
+                value = settings.musicVolume,
                 range = 0f..100f,
             ) { value ->
-                edit { it.copy(volume = value) }
+                edit { it.copy(musicVolume = value) }
+            }
+            SliderRow(
+                title = "Громкость звуковых эффектов",
+                valueLabel = "${settings.sfxVolume}%",
+                value = settings.sfxVolume,
+                range = 0f..100f,
+            ) { value ->
+                edit { it.copy(sfxVolume = value) }
             }
         }
         Spacer(Modifier.height(18.dp))
@@ -295,6 +271,89 @@ fun SettingsScreen(repository: SettingsRepository, onBack: () -> Unit) {
 }
 
 @Composable
+private fun PresetSettings(
+    state: SettingsState,
+    onSelectBuiltIn: (Preset) -> Unit,
+    onSelectSaved: (String) -> Unit,
+    onSave: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var newName by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf<String?>(null) }
+
+    ChipRow {
+        Preset.builtIns.forEach { preset ->
+            ChoiceChip(presetTitle(preset), state.activeBuiltIn == preset) {
+                onSelectBuiltIn(preset)
+            }
+        }
+    }
+    if (state.activeBuiltIn != null) {
+        Text(
+            text = presetBlurb(state.activeBuiltIn),
+            color = Muted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+    state.savedPresets.forEach { preset ->
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ChoiceChip(preset.name, state.activeSavedPreset == preset, Modifier.weight(1f)) {
+                onSelectSaved(preset.name)
+            }
+            TextButton(onClick = { deleting = preset.name }) { Text("Удалить") }
+        }
+    }
+    TextButton(onClick = { newName = "" }) { Text("Сохранить текущий набор") }
+
+    newName?.let { name ->
+        val duplicate = state.savedPresets.any { it.name.equals(name.trim(), ignoreCase = true) }
+        AlertDialog(
+            onDismissRequest = { newName = null },
+            title = { Text("Сохранить набор") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { newName = it },
+                    label = { Text("Название") },
+                    singleLine = true,
+                    isError = duplicate,
+                    supportingText = if (duplicate) { { Text("Набор с таким названием уже есть") } } else null,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank() && !duplicate,
+                    onClick = {
+                        onSave(name)
+                        newName = null
+                    },
+                ) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { newName = null }) { Text("Отмена") } },
+        )
+    }
+    deleting?.let { name ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Удалить набор?") },
+            text = { Text(name) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(name)
+                    deleting = null
+                }) { Text("Удалить") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } },
+        )
+    }
+}
+
+@Composable
 private fun RuleBlock(title: String, hint: String, content: @Composable () -> Unit) {
     Text(title, color = Paper, fontSize = 15.sp, modifier = Modifier.padding(top = 14.dp))
     Text(hint, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
@@ -314,14 +373,17 @@ private fun ChipRow(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Text(
         text = text,
         color = if (selected) Ink else Paper,
         fontSize = 14.sp,
-        modifier = Modifier
-            .background(if (selected) Amber else KeyIdle, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .tap(onClick)
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Amber else KeyIdle)
+            .selectable(selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     )
 }
@@ -345,14 +407,14 @@ private fun ToggleRow(label: String, hint: String, checked: Boolean, onChecked: 
 private fun SliderRow(
     title: String,
     valueLabel: String,
-    hint: String,
+    hint: String? = null,
     value: Int,
     range: ClosedFloatingPointRange<Float>,
     onChange: (Int) -> Unit,
 ) {
     Text(title, color = Paper, fontSize = 15.sp, modifier = Modifier.padding(top = 14.dp))
     Text(valueLabel, color = Amber, fontSize = 13.sp)
-    Text(hint, color = Muted, fontSize = 12.sp)
+    if (hint != null) Text(hint, color = Muted, fontSize = 12.sp)
     Slider(
         value = value.toFloat(),
         onValueChange = { onChange(it.toInt()) },
@@ -360,10 +422,10 @@ private fun SliderRow(
     )
 }
 
-private fun presetBlurb(rules: GameConfig): String = when (rules.preset) {
+private fun presetBlurb(preset: Preset): String = when (preset) {
     Preset.AUTHOR -> "Набор по умолчанию: современный поворот и очки, повтор реже, одна следующая фигура, можно подвинуть после приземления."
     Preset.GUIDELINE -> "Современные правила: поворот у стены, запас, призрак и пауза после приземления."
     Preset.GAME_BOY -> "Как на Game Boy: без выталкивания из стены, одна следующая фигура, фиксация сразу."
     Preset.NES -> "Как на NES: четыре поворота, повтор выпадает реже, скорость старой приставки."
-    Preset.CUSTOM -> "Свой набор. Любое изменение ниже оставляет этот режим."
+    Preset.CUSTOM -> ""
 }

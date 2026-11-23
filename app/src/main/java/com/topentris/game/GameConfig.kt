@@ -1,6 +1,12 @@
 package com.topentris.game
 
-enum class Preset { AUTHOR, GUIDELINE, GAME_BOY, NES, CUSTOM }
+enum class Preset {
+    AUTHOR, GUIDELINE, GAME_BOY, NES, CUSTOM;
+
+    companion object {
+        val builtIns = entries.filter { it != CUSTOM }
+    }
+}
 
 enum class RotationSystem { SRS, CLASSIC }
 
@@ -33,7 +39,11 @@ data class GameConfig(
             Preset.CUSTOM -> if (scoreTable == ScoreTable.GUIDELINE) Gravity.GUIDELINE else Gravity.NES
         }
 
-    fun asCustom(): GameConfig = copy(preset = Preset.CUSTOM, twoStateSz = false)
+    fun detectPreset(): GameConfig {
+        val custom = copy(preset = Preset.CUSTOM)
+        val match = Preset.builtIns.firstOrNull { of(it).copy(preset = Preset.CUSTOM) == custom }
+        return custom.copy(preset = match ?: Preset.CUSTOM)
+    }
 
     companion object {
         fun of(preset: Preset): GameConfig = when (preset) {
@@ -41,7 +51,7 @@ data class GameConfig(
             Preset.GUIDELINE -> guideline()
             Preset.GAME_BOY -> gameBoy()
             Preset.NES -> nes()
-            Preset.CUSTOM -> guideline().asCustom()
+            Preset.CUSTOM -> guideline().copy(preset = Preset.CUSTOM)
         }
 
         fun author() = GameConfig(
@@ -113,8 +123,49 @@ data class Settings(
     val rules: GameConfig = GameConfig.author(),
     val controls: ControlConfig = ControlConfig(),
     val music: Boolean = true,
-    val volume: Int = 80,
+    val musicVolume: Int = 80,
+    val sfxVolume: Int = 80,
+    val scorePopups: Boolean = true,
+    val splitRotate: Boolean = true,
+    val showButtons: Boolean = true,
+) {
+    val configuration: GameplaySettings
+        get() = GameplaySettings(rules, controls, scorePopups, splitRotate, showButtons)
+
+    fun applyConfiguration(configuration: GameplaySettings): Settings = copy(
+        rules = configuration.rules,
+        controls = configuration.controls,
+        scorePopups = configuration.scorePopups,
+        splitRotate = configuration.splitRotate,
+        showButtons = configuration.showButtons,
+    )
+}
+
+data class GameplaySettings(
+    val rules: GameConfig,
+    val controls: ControlConfig = ControlConfig(),
     val scorePopups: Boolean = true,
     val splitRotate: Boolean = true,
     val showButtons: Boolean = true,
 )
+
+data class SavedPreset(val name: String, val configuration: GameplaySettings)
+
+data class SettingsState(
+    val settings: Settings = Settings(),
+    val savedPresets: List<SavedPreset> = emptyList(),
+    val preferredPresetName: String? = null,
+) {
+    private val configuration = settings.configuration
+    private val matchingBuiltIn = settings.rules.preset.takeIf { preset ->
+        preset != Preset.CUSTOM && configuration == GameplaySettings(GameConfig.of(preset))
+    }
+    val activeSavedPreset = savedPresets.firstOrNull {
+        it.name == preferredPresetName && it.configuration == configuration
+    } ?: if (matchingBuiltIn == null) {
+        savedPresets.firstOrNull { it.configuration == configuration }
+    } else {
+        null
+    }
+    val activeBuiltIn = matchingBuiltIn.takeIf { activeSavedPreset == null }
+}

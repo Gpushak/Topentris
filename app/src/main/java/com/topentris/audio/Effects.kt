@@ -5,7 +5,7 @@ import android.content.res.AssetFileDescriptor
 import android.media.AudioAttributes
 import android.media.SoundPool
 
-/** Short cues for a lock, a line clear, and a tetris. Uses the same volume as the music. */
+/** Short cues for a lock, a line clear, and a tetris. */
 class Effects(context: Context) {
     private val pool = SoundPool.Builder()
         .setMaxStreams(3)
