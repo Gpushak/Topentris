@@ -87,6 +87,8 @@ fun Section(
     }
 }
 
+internal const val PrikolModeTitle = "Режим Прикола"
+
 fun presetTitle(preset: Preset): String = when (preset) {
     Preset.AUTHOR -> "Авторский"
     Preset.GUIDELINE -> "Guideline"

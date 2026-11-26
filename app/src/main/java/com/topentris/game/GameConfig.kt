@@ -128,6 +128,8 @@ data class Settings(
     val scorePopups: Boolean = true,
     val splitRotate: Boolean = true,
     val showButtons: Boolean = true,
+    val prikolMode: Boolean = false,
+    val prikolSfxVolume: Int = 120,
 ) {
     val configuration: GameplaySettings
         get() = GameplaySettings(rules, controls, scorePopups, splitRotate, showButtons)

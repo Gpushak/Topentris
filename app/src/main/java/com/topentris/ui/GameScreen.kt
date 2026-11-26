@@ -25,7 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,11 +48,8 @@ import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +57,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.topentris.audio.Effects
+import com.topentris.audio.PrikolEffects
 import com.topentris.audio.Soundtrack
 import com.topentris.data.SettingsRepository
 import com.topentris.game.COLS
@@ -92,6 +92,8 @@ fun GameScreen(
     scorePopups: Boolean,
     splitRotate: Boolean,
     showButtons: Boolean,
+    prikolMode: Boolean,
+    prikolVolume: Float,
     resume: MatchSave?,
     onExit: () -> Unit,
     onRestart: () -> Unit,
@@ -107,6 +109,13 @@ fun GameScreen(
     var resumeSeconds by remember(sessionId) { mutableStateOf<Int?>(null) }
     val countingDown = resumeSeconds != null
     val playing = snap.state == PlayState.PLAYING
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var foreground by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+    val prikolEffects = remember(sessionId) {
+        if (prikolMode) PrikolEffects(context.applicationContext) else null
+    }
     val board = remember(sessionId) { BoardRef(rules, snap, splitRotate) }
     board.rules = rules
     board.snap = snap
@@ -115,6 +124,8 @@ fun GameScreen(
     val popupsEnabled = rememberUpdatedState(scorePopups)
     var floaters by remember(sessionId) { mutableStateOf(emptyList<ScoreFloater>()) }
     var clock by remember(sessionId) { mutableLongStateOf(0L) }
+    var bursts by remember(sessionId) { mutableStateOf(emptyList<PrikolLineBurst>()) }
+    var burstClock by remember(sessionId) { mutableLongStateOf(0L) }
     var recordPlace by remember(sessionId) { mutableStateOf<Int?>(null) }
     var scoreSent by remember(sessionId) { mutableStateOf(false) }
 
@@ -124,13 +135,19 @@ fun GameScreen(
         onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(prikolEffects) {
+        onDispose { prikolEffects?.release() }
+    }
+    SideEffect { prikolEffects?.setVolume(prikolVolume) }
+
+    suspend fun storeMatch() {
+        if (engine.playState == PlayState.GAME_OVER) repository.clearMatch()
+        else repository.saveMatch(engine.capture(controls).copy(prikolMode = prikolMode))
+    }
+
     fun persist() {
         scope.launch {
-            withContext(NonCancellable) {
-                if (engine.playState == PlayState.GAME_OVER) repository.clearMatch()
-                else repository.saveMatch(engine.capture(controls))
-            }
+            withContext(NonCancellable) { storeMatch() }
         }
     }
     fun refreshSnapshot() {
@@ -139,6 +156,7 @@ fun GameScreen(
     }
     fun pauseMatch() {
         engine.pause()
+        prikolEffects?.setPaused(true)
         resumeSeconds = null
         live.clear()
         das.reset()
@@ -146,9 +164,18 @@ fun GameScreen(
     }
     DisposableEffect(lifecycleOwner, engine) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) {
-                if (engine.playState != PlayState.GAME_OVER) pauseMatch()
-                persist()
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    foreground = false
+                    prikolEffects?.setPaused(true)
+                    if (engine.playState != PlayState.GAME_OVER) pauseMatch()
+                    persist()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    foreground = true
+                    prikolEffects?.setPaused(engine.playState == PlayState.PAUSED)
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -164,12 +191,14 @@ fun GameScreen(
         }
         live.clear()
         engine.resume()
+        prikolEffects?.setPaused(!foreground)
         refreshSnapshot()
         resumeSeconds = null
     }
 
     LaunchedEffect(engine) {
         var last = 0L
+        var activeTime = 0L
         while (true) {
             withFrameNanos { now ->
                 if (floaters.isNotEmpty()) {
@@ -181,14 +210,29 @@ fun GameScreen(
                     last = 0L
                     return@withFrameNanos
                 }
-                val dt = if (last == 0L) 16.0 else (now - last).coerceAtMost(100_000_000L) / 1_000_000.0
+                val delta = if (last == 0L) 16_000_000L else (now - last).coerceAtMost(100_000_000L)
+                val dt = delta / 1_000_000.0
+                activeTime += delta
                 last = now
                 val cfg = controlsState.value
                 val next = engine.frame(dt, live.consume(das, dt, cfg), cfg.softDropMs.toDouble())
                 snap = next
                 board.snap = next
                 if (cfg.vibration && next.feedback.isNotEmpty()) vibrate(context)
-                if (Feedback.LOCK in next.feedback) effects.playLock(next.clearedLines)
+                if (Feedback.LOCK in next.feedback) {
+                    if (prikolEffects == null) effects.playLock(next.clearedLines)
+                    else prikolEffects.playLock(next.clearedLines)
+                }
+                if (next.state == PlayState.PLAYING) prikolEffects?.advance(dt)
+                if (prikolMode && next.clearedRows.isNotEmpty()) {
+                    bursts = bursts + PrikolLineBurst(next.clearedRows, activeTime)
+                }
+                if (bursts.isNotEmpty()) {
+                    burstClock = activeTime
+                    if (bursts.any { it.isFinished(activeTime) }) {
+                        bursts = bursts.filterNot { it.isFinished(activeTime) }
+                    }
+                }
                 if (popupsEnabled.value && next.popupPoints > 0) {
                     clock = now
                     floaters = floaters + ScoreFloater(
@@ -202,27 +246,25 @@ fun GameScreen(
         }
     }
 
-    LaunchedEffect(snap.state) {
-        soundtrack.setMatchPaused(snap.state == PlayState.PAUSED)
+    LaunchedEffect(prikolMode, snap.state) {
+        soundtrack.setMatch(prikolMode, paused = snap.state == PlayState.PAUSED)
     }
     DisposableEffect(soundtrack) {
-        onDispose { soundtrack.setMatchPaused(false) }
+        onDispose { soundtrack.setMatch(prikolMode = false, paused = false) }
     }
 
     LaunchedEffect(snap.state, sessionId) {
         if (snap.state == PlayState.GAME_OVER && !scoreSent) {
             scoreSent = true
-            recordPlace = repository.submitScore(rules.preset, snap.score)
+            prikolEffects?.playLoss()
+            recordPlace = repository.submitScore(rules.preset, snap.score, prikolMode)
             repository.clearMatch()
         }
     }
 
     fun leave() {
         scope.launch {
-            withContext(NonCancellable) {
-                if (engine.playState == PlayState.GAME_OVER) repository.clearMatch()
-                else repository.saveMatch(engine.capture(controls))
-            }
+            withContext(NonCancellable) { storeMatch() }
             onExit()
         }
     }
@@ -250,7 +292,13 @@ fun GameScreen(
                         .fillMaxSize()
                         .pointerInput(sessionId, playing) { if (playing) watchField(live, board) },
                 ) {
-                    drawField(snap)
+                    drawField(snap, prikolMode)
+                    if (bursts.isNotEmpty()) {
+                        val field = fieldMetrics(size.width, size.height)
+                        for (burst in bursts) {
+                            burst.draw(this, burstClock, Offset(field.left, field.top), field.cell)
+                        }
+                    }
                 }
                 ScoreFloaters(floaters, clock, Modifier.fillMaxSize())
             }
@@ -264,6 +312,11 @@ fun GameScreen(
                     persist()
                 },
             )
+        }
+        if (prikolMode && snap.state != PlayState.GAME_OVER) {
+            key(sessionId) {
+                PrikolOverlay(running = playing && foreground, sfxVolume = prikolVolume)
+            }
         }
         val seconds = resumeSeconds
         if (seconds != null) {
@@ -427,9 +480,9 @@ private fun ControlPad(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (holdEnabled) {
-                GameKey("H", "Запас", true, Modifier.weight(1f).height(48.dp), onDown = { input.hold = true })
+                GameKey(GameKeyKind.HOLD, true, Modifier.weight(1f).height(48.dp), onDown = { input.hold = true })
             }
-            GameKey("II", "Пауза", true, Modifier.weight(1f).height(48.dp), onDown = onPause)
+            GameKey(GameKeyKind.PAUSE, true, Modifier.weight(1f).height(48.dp), onDown = onPause)
         }
         return
     }
@@ -440,103 +493,35 @@ private fun ControlPad(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            GameKey("↺", "Против часовой", true, Modifier.weight(1f).height(52.dp), onDown = { input.ccw = true })
-            GameKey("↻", "По часовой", true, Modifier.weight(1f).height(52.dp), onDown = { input.cw = true })
-            GameKey("H", "Запас", holdEnabled, Modifier.weight(1f).height(52.dp), onDown = { input.hold = true })
-            GameKey("II", "Пауза", true, Modifier.weight(1f).height(52.dp), onDown = onPause)
+            GameKey(GameKeyKind.ROTATE_LEFT, true, Modifier.weight(1f).height(52.dp), onDown = { input.ccw = true })
+            GameKey(GameKeyKind.ROTATE_RIGHT, true, Modifier.weight(1f).height(52.dp), onDown = { input.cw = true })
+            GameKey(GameKeyKind.HOLD, holdEnabled, Modifier.weight(1f).height(52.dp), onDown = { input.hold = true })
+            GameKey(GameKeyKind.PAUSE, true, Modifier.weight(1f).height(52.dp), onDown = onPause)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GameKey(
-                "←",
-                "Влево",
+                GameKeyKind.LEFT,
                 true,
                 Modifier.weight(1f).height(56.dp),
                 onDown = { input.pressLeft(true) },
                 onUp = { input.pressLeft(false) },
             )
             GameKey(
-                "↓",
-                "Вниз",
+                GameKeyKind.DOWN,
                 true,
                 Modifier.weight(1f).height(56.dp),
                 onDown = { input.soft = true },
                 onUp = { input.soft = false },
             )
             GameKey(
-                "→",
-                "Вправо",
+                GameKeyKind.RIGHT,
                 true,
                 Modifier.weight(1f).height(56.dp),
                 onDown = { input.pressRight(true) },
                 onUp = { input.pressRight(false) },
             )
-            GameKey("⤵", "Жёсткий сброс", hardEnabled, Modifier.weight(1f).height(56.dp), onDown = { input.hard = true })
+            GameKey(GameKeyKind.DROP, hardEnabled, Modifier.weight(1f).height(56.dp), onDown = { input.hard = true })
         }
-    }
-}
-
-@Composable
-private fun GameKey(
-    label: String,
-    description: String,
-    enabled: Boolean,
-    modifier: Modifier,
-    onDown: () -> Unit,
-    onUp: () -> Unit = {},
-) {
-    var pressed by remember { mutableStateOf(false) }
-    val downState = rememberUpdatedState(onDown)
-    val upState = rememberUpdatedState(onUp)
-    val enabledState = rememberUpdatedState(enabled)
-    Box(
-        modifier
-            .semantics { contentDescription = description }
-            .background(
-                color = when {
-                    !enabled -> KeyIdle.copy(alpha = 0.4f)
-                    pressed -> KeyPressed
-                    else -> KeyIdle
-                },
-                shape = RoundedCornerShape(12.dp),
-            )
-            .pointerInput(Unit) {
-                var held = false
-                try {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            event.changes.forEach { change ->
-                                if (!enabledState.value) return@forEach
-                                if (change.changedToDown()) {
-                                    held = true
-                                    pressed = true
-                                    downState.value()
-                                    change.consume()
-                                } else if (held && !change.pressed) {
-                                    held = false
-                                    pressed = false
-                                    upState.value()
-                                    change.consume()
-                                }
-                            }
-                        }
-                    }
-                } finally {
-                    if (held) {
-                        held = false
-                        pressed = false
-                        upState.value()
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = if (enabled) Paper else Muted,
-            fontSize = 22.sp,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 
@@ -591,15 +576,15 @@ private fun BlockingScrim() {
     )
 }
 
-private fun DrawScope.drawField(snap: GameSnapshot) {
+private fun DrawScope.drawField(snap: GameSnapshot, prikolMode: Boolean) {
     val metrics = fieldMetrics(size.width, size.height)
     drawRoundRect(
-        color = Field,
+        color = if (prikolMode) Color(0xFF301034) else Field,
         topLeft = Offset(metrics.left, metrics.top),
         size = Size(metrics.cell * COLS, metrics.cell * ROWS),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f),
     )
-    val grid = GridLine
+    val grid = if (prikolMode) Color(0xFF6C2769) else GridLine
     for (column in 0..COLS) {
         val x = metrics.left + column * metrics.cell
         drawLine(grid, Offset(x, metrics.top), Offset(x, metrics.top + metrics.cell * ROWS), strokeWidth = 1f)

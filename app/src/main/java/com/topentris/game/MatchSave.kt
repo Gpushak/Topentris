@@ -24,6 +24,7 @@ data class MatchSave(
     val bag: List<Piece>,
     val rerollPrevious: Piece?,
     val grid: List<String>,
+    val prikolMode: Boolean = false,
 ) {
     fun encode(): String = buildString {
         appendLine("1")
@@ -33,7 +34,7 @@ data class MatchSave(
             listOf(
                 score, lines, level, combo,
                 bit(paused), bit(lastRotation), bit(locking),
-                lockMs, lockResets, dropMs, softMs,
+                lockMs, lockResets, dropMs, softMs, bit(prikolMode),
             ).joinToString(","),
         )
         appendLine(hold?.name ?: "-")
@@ -87,6 +88,7 @@ data class MatchSave(
                 bag = bag,
                 rerollPrevious = reroll,
                 grid = grid,
+                prikolMode = stats.getOrNull(11) == "1",
             )
         }
     }

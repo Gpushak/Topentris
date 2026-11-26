@@ -1,7 +1,9 @@
 package com.topentris.game
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchSaveTest {
@@ -21,5 +23,15 @@ class MatchSaveTest {
         assertEquals(engine.snapshot().score, snap.score)
         assertEquals(PlayState.PAUSED, snap.state)
         assertEquals(99, saved.controls.softDropMs)
+    }
+
+    @Test
+    fun savedPrikolModeSurvivesAndOldSavesOpenInNormalMode() {
+        val save = GameEngine(GameConfig.author(), nextInt = { 0 }).capture().copy(prikolMode = true)
+        assertTrue(MatchSave.decode(save.encode())!!.prikolMode)
+
+        val legacy = save.encode().lines().toMutableList()
+        legacy[3] = legacy[3].substringBeforeLast(',')
+        assertFalse(MatchSave.decode(legacy.joinToString("\n"))!!.prikolMode)
     }
 }

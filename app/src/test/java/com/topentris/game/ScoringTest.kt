@@ -34,9 +34,22 @@ class ScoringTest {
         val snap = engine.frame(0.0, FrameInput(hardDrop = true))
         assertEquals(4, snap.lines)
         assertEquals(4, snap.clearedLines)
+        assertEquals(listOf(16, 17, 18, 19), snap.clearedRows)
         assertEquals(800, snap.popupPoints)
         assertEquals(800, snap.score)
         assertEquals(0, snap.cells.count { it != null })
+    }
+
+    @Test
+    fun separatedClearsKeepTheirOriginalRowsForOneFrame() {
+        val engine = GameEngine(GameConfig.guideline())
+        for (row in listOf(17, 19)) {
+            for (x in 0 until COLS) if (x != 2) engine.debugFill(x, row)
+        }
+        engine.debugPiece(Piece.I, rotation = 1, x = 0, y = 16)
+
+        assertEquals(listOf(17, 19), engine.frame(0.0, FrameInput(hardDrop = true)).clearedRows)
+        assertEquals(emptyList<Int>(), engine.frame(0.0).clearedRows)
     }
 
     @Test

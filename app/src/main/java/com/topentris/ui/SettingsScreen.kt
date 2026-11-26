@@ -185,13 +185,24 @@ fun SettingsScreen(
             ) { value ->
                 edit { it.copy(musicVolume = value) }
             }
-            SliderRow(
-                title = "Громкость звуковых эффектов",
-                valueLabel = "${settings.sfxVolume}%",
-                value = settings.sfxVolume,
-                range = 0f..100f,
-            ) { value ->
-                edit { it.copy(sfxVolume = value) }
+            if (settings.prikolMode) {
+                SliderRow(
+                    title = "Громкость эффектов и видео",
+                    valueLabel = "${settings.prikolSfxVolume}%",
+                    value = settings.prikolSfxVolume,
+                    range = 0f..200f,
+                ) { value ->
+                    edit { it.copy(prikolSfxVolume = value) }
+                }
+            } else {
+                SliderRow(
+                    title = "Громкость звуковых эффектов",
+                    valueLabel = "${settings.sfxVolume}%",
+                    value = settings.sfxVolume,
+                    range = 0f..100f,
+                ) { value ->
+                    edit { it.copy(sfxVolume = value) }
+                }
             }
         }
         Spacer(Modifier.height(18.dp))
@@ -266,6 +277,10 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(20.dp))
         Plate(label = "Назад", onClick = onBack)
+        Spacer(Modifier.height(28.dp))
+        ToggleRow(label = PrikolModeTitle, checked = settings.prikolMode) { value ->
+            edit { it.copy(prikolMode = value) }
+        }
         Spacer(Modifier.height(12.dp))
     }
 }
@@ -389,7 +404,7 @@ private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Mod
 }
 
 @Composable
-private fun ToggleRow(label: String, hint: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+private fun ToggleRow(label: String, hint: String? = null, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -397,7 +412,7 @@ private fun ToggleRow(label: String, hint: String, checked: Boolean, onChecked: 
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(label, color = Paper, fontSize = 16.sp)
-            Text(hint, color = Muted, fontSize = 12.sp)
+            if (hint != null) Text(hint, color = Muted, fontSize = 12.sp)
         }
         Switch(checked = checked, onCheckedChange = onChecked)
     }

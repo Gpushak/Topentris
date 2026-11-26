@@ -37,7 +37,7 @@ class GameEngine(
     private var landedThisFrame = false
     private var lockedThisAction = false
     private val feedback = linkedSetOf<Feedback>()
-    private var clearedLines = 0
+    private var clearedRows = emptyList<Int>()
     private var popupPoints = 0
     private var popupRow = ROWS / 2
     private var hardDropPoints = 0
@@ -110,7 +110,7 @@ class GameEngine(
 
     fun frame(dtMillis: Double, input: FrameInput = FrameInput(), softDropMs: Double = 50.0): GameSnapshot {
         feedback.clear()
-        clearedLines = 0
+        clearedRows = emptyList()
         popupPoints = 0
         hardDropPoints = 0
         landedThisFrame = false
@@ -192,7 +192,7 @@ class GameEngine(
             lines = lines,
             state = state,
             feedback = feedback.toSet(),
-            clearedLines = clearedLines,
+            clearedRows = clearedRows,
             popupPoints = popupPoints,
             popupRow = popupRow,
         )
@@ -418,7 +418,8 @@ class GameEngine(
                 grid[cell.y + buffer][cell.x] = piece.type
             }
         }
-        val cleared = clearFullRows()
+        clearedRows = clearFullRows()
+        val cleared = clearedRows.size
         val scoringLevel = level
         var gained = if (spin) {
             tSpinBase(cleared) * scoringLevel
@@ -440,12 +441,11 @@ class GameEngine(
         addScore(gained)
         if (gained > 0) popupPoints = gained + hardDropPoints
         popupRow = if (cleared > 0) {
-            clearedAnchor
+            clearedRows.sum() / cleared
         } else {
             val rows = cellsOf(piece).map { it.y }.filter { it in 0 until ROWS }
             if (rows.isEmpty()) ROWS / 2 else rows.sum() / rows.size
         }
-        clearedLines = cleared
         feedback.add(Feedback.LOCK)
         lastRotation = false
         lockedThisAction = true
@@ -456,15 +456,12 @@ class GameEngine(
         spawn(keepHoldUsed = false)
     }
 
-    private var clearedAnchor = ROWS / 2
-
-    private fun clearFullRows(): Int {
+    private fun clearFullRows(): List<Int> {
         val full = mutableListOf<Int>()
         for (y in -buffer until ROWS) {
             if ((0 until COLS).all { x -> grid[y + buffer][x] != null }) full.add(y)
         }
-        if (full.isEmpty()) return 0
-        clearedAnchor = full.sum() / full.size
+        if (full.isEmpty()) return full
         val kept = mutableListOf<Triple<Int, Int, Piece>>()
         for (y in -buffer until ROWS) {
             if (y in full) continue
@@ -479,7 +476,7 @@ class GameEngine(
             val nextY = y + fall
             if (nextY in -buffer until ROWS) grid[nextY + buffer][x] = type
         }
-        return full.size
+        return full
     }
 
     private fun spawn(keepHoldUsed: Boolean) {

@@ -12,8 +12,8 @@ android {
         applicationId = "com.topentris"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildTypes {
@@ -36,11 +36,12 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("flac", "ogg")
+        noCompress += listOf("flac", "ogg", "mp3", "mp4")
     }
 
     sourceSets.named("main") {
         assets.srcDir(layout.buildDirectory.dir("generated/musicAssets"))
+        assets.srcDir(layout.buildDirectory.dir("generated/prikolAssets"))
     }
 
     packaging {
@@ -75,9 +76,17 @@ val stageSoundtrack = tasks.register<Copy>("stageSoundtrack") {
     includeEmptyDirs = false
 }
 
+val stagePrikolAssets = tasks.register<Sync>("stagePrikolAssets") {
+    from(rootProject.file("PrikolFiles")) {
+        include("MetalOst/*.mp3", "SFX/*/*.mp3", "VisualMemes/*.gif", "VisualMemes/*.jpg", "VisualMemes/*.mp4")
+    }
+    into(layout.buildDirectory.dir("generated/prikolAssets/prikol"))
+    includeEmptyDirs = false
+}
+
 tasks.configureEach {
     if (name == "mergeDebugAssets" || name == "mergeReleaseAssets") {
-        dependsOn(stageSoundtrack)
+        dependsOn(stageSoundtrack, stagePrikolAssets)
     }
 }
 

@@ -34,15 +34,15 @@ class SettingsTest {
     }
 
     @Test
-    fun audioDoesNotAffectMatchingOrChangeWhenApplyingAPreset() {
-        val audio = Settings(music = false, musicVolume = 24, sfxVolume = 62)
+    fun audioAndPrikolModeStayIndependentOfPresets() {
+        val settings = Settings(music = false, musicVolume = 24, sfxVolume = 62, prikolMode = true)
         val configuration = GameplaySettings(GameConfig.nes(), showButtons = false)
         val saved = SavedPreset("NES без кнопок", configuration)
-        val applied = audio.applyConfiguration(configuration)
+        val applied = settings.applyConfiguration(configuration)
 
-        assertEquals(Preset.AUTHOR, SettingsState(audio).activeBuiltIn)
+        assertEquals(Preset.AUTHOR, SettingsState(settings).activeBuiltIn)
         assertEquals(saved, SettingsState(applied, listOf(saved)).activeSavedPreset)
-        assertEquals(audio.copy(rules = GameConfig.nes(), showButtons = false), applied)
+        assertEquals(settings.copy(rules = GameConfig.nes(), showButtons = false), applied)
     }
 
     @Test

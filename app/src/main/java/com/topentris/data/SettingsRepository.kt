@@ -30,12 +30,20 @@ import org.json.JSONObject
 
 private val Context.store by preferencesDataStore(name = "topentris")
 
+data class Records(
+    val byPreset: Map<Preset, List<Int>> = emptyMap(),
+    val prikol: List<Int> = emptyList(),
+)
+
 class SettingsRepository(private val context: Context) {
     val settings: Flow<SettingsState> = context.store.data.map { prefs ->
         SettingsState(prefs.toSettings(), prefs.savedPresets(), prefs[Keys.preferredPreset])
     }
-    val records: Flow<Map<Preset, List<Int>>> = context.store.data.map { prefs ->
-        Preset.entries.associateWith { prefs.scores(it) }
+    val records: Flow<Records> = context.store.data.map { prefs ->
+        Records(
+            byPreset = Preset.entries.associateWith { prefs.scores(scoresKey(it)) },
+            prikol = prefs.scores(Keys.prikolScores),
+        )
     }
 
     val savedMatch: Flow<MatchSave?> = context.store.data.map { prefs ->
@@ -106,13 +114,14 @@ class SettingsRepository(private val context: Context) {
     }
 
     /** @return 1-based place in the top five, or null when the score stays off the table. */
-    suspend fun submitScore(preset: Preset, score: Int): Int? {
+    suspend fun submitScore(preset: Preset, score: Int, prikolMode: Boolean = false): Int? {
         if (score <= 0) return null
+        val key = if (prikolMode) Keys.prikolScores else scoresKey(preset)
         var place: Int? = null
         context.store.edit { prefs ->
-            val before = prefs.scores(preset)
+            val before = prefs.scores(key)
             val after = (before + score).sortedDescending().take(5)
-            prefs[scoresKey(preset)] = after.joinToString(",")
+            prefs[key] = after.joinToString(",")
             place = if (after != before) after.indexOf(score) + 1 else null
         }
         return place
@@ -144,15 +153,18 @@ class SettingsRepository(private val context: Context) {
             vibration = this[Keys.vibration] ?: true,
         )
         val musicVolume = (this[Keys.musicVolume] ?: 80).coerceIn(0, 100)
+        val sfxVolume = (this[Keys.sfxVolume] ?: musicVolume).coerceIn(0, 100)
         return Settings(
             rules = rules.detectPreset(),
             controls = controls,
             music = this[Keys.music] ?: true,
             musicVolume = musicVolume,
-            sfxVolume = (this[Keys.sfxVolume] ?: musicVolume).coerceIn(0, 100),
+            sfxVolume = sfxVolume,
             scorePopups = this[Keys.scorePopups] ?: true,
             splitRotate = this[Keys.splitRotate] ?: true,
             showButtons = this[Keys.showButtons] ?: true,
+            prikolMode = this[Keys.prikolMode] ?: false,
+            prikolSfxVolume = (this[Keys.prikolSfxVolume] ?: sfxVolume * 3 / 2).coerceIn(0, 200),
         )
     }
 
@@ -178,6 +190,8 @@ class SettingsRepository(private val context: Context) {
         this[Keys.scorePopups] = settings.scorePopups
         this[Keys.splitRotate] = settings.splitRotate
         this[Keys.showButtons] = settings.showButtons
+        this[Keys.prikolMode] = settings.prikolMode
+        this[Keys.prikolSfxVolume] = settings.prikolSfxVolume.coerceIn(0, 200)
     }
 
     private fun Preferences.savedPresets(): List<SavedPreset> {
@@ -216,8 +230,8 @@ class SettingsRepository(private val context: Context) {
         this[Keys.savedPresets] = array.toString()
     }
 
-    private fun Preferences.scores(preset: Preset): List<Int> {
-        return this[scoresKey(preset)]
+    private fun Preferences.scores(key: Preferences.Key<String>): List<Int> {
+        return this[key]
             .orEmpty()
             .split(',')
             .mapNotNull { it.toIntOrNull() }
@@ -252,6 +266,9 @@ class SettingsRepository(private val context: Context) {
         val scorePopups = booleanPreferencesKey("score_popups")
         val splitRotate = booleanPreferencesKey("split_rotate")
         val showButtons = booleanPreferencesKey("show_buttons")
+        val prikolMode = booleanPreferencesKey("prikol_mode")
+        val prikolSfxVolume = intPreferencesKey("prikol_sfx_volume")
+        val prikolScores = stringPreferencesKey("scores_prikol")
         val savedPresets = stringPreferencesKey("saved_presets")
         val preferredPreset = stringPreferencesKey("preferred_preset")
         val savedMatch = stringPreferencesKey("saved_match")

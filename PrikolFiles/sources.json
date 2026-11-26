@@ -1,0 +1,32 @@
+{
+  "license": "CC0-1.0",
+  "assets": {
+    "VisualMemes/cat-jumpscare.mp4": {
+      "author": "Panini!",
+      "source": "https://commons.wikimedia.org/wiki/File:Cat_Jumpscare.webm",
+      "changes": "Excerpt from 4.8 to 9 seconds, converted to MP4 and lowered audio by 3 dB."
+    },
+    "VisualMemes/walking-duck.gif": {
+      "author": "Drummyfish",
+      "source": "https://commons.wikimedia.org/wiki/File:Cartoon_steamer_duck_walking_animation.gif"
+    },
+    "SFX/figuredown/spring-boing.mp3": {
+      "author": "Aeva",
+      "source": "https://opengameart.org/content/boing",
+      "changes": "Shortened to 1.75 seconds with a fade-out and converted to MP3."
+    },
+    "SFX/1-3linescleared/uah.mp3": {
+      "author": "EZduzziteh",
+      "source": "https://opengameart.org/content/silly-sound-effects"
+    },
+    "SFX/randomtick/blah.mp3": {
+      "author": "EZduzziteh",
+      "source": "https://opengameart.org/content/silly-sound-effects"
+    },
+    "SFX/losing/awkward-trumpet.mp3": {
+      "author": "GloriaTheAnimator",
+      "source": "https://opengameart.org/content/happy-awkward-trumpet",
+      "changes": "Shortened to 4.7 seconds with a fade-out, lowered by 3 dB, and converted to MP3."
+    }
+  }
+}

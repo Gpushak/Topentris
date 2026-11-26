@@ -6,15 +6,17 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 
-/** Plays the album in `assets/music` and loops it. Quiet while a match is paused or the app is in the background. */
+/** Loops the current soundtrack. Quiet while a match is paused or the app is in the background. */
 class Soundtrack(private val context: Context) {
     private val player = MediaPlayer()
     private val audio = context.getSystemService(AudioManager::class.java)
-    private val tracks: List<String> = context.assets.list("music")
-        ?.filter { it.endsWith(".flac", ignoreCase = true) }
-        ?.sorted()
-        .orEmpty()
+    private val normalTracks = tracksIn("music", ".flac")
+    private val metalTracks = tracksIn("prikol/MetalOst", ".mp3")
+    private var tracks = normalTracks
     private var index = 0
+    private var normalIndex = 0
+    private var normalPosition = 0
+    private var seekOnPrepare = 0
     private var enabled = false
     private var level = 0.8f
     private var foreground = false
@@ -37,6 +39,8 @@ class Soundtrack(private val context: Context) {
             ready = true
             failures = 0
             prepared.setVolume(level, level)
+            if (seekOnPrepare > 0) prepared.seekTo(seekOnPrepare)
+            seekOnPrepare = 0
             if (wantPlay) prepared.start()
         }
         player.setOnCompletionListener {
@@ -67,8 +71,23 @@ class Soundtrack(private val context: Context) {
         sync()
     }
 
-    fun setMatchPaused(value: Boolean) {
-        matchPaused = value
+    fun setMatch(prikolMode: Boolean, paused: Boolean) {
+        if (released) return
+        matchPaused = paused
+        val next = if (prikolMode && metalTracks.isNotEmpty()) metalTracks else normalTracks
+        if (next !== tracks) {
+            if (tracks === normalTracks) {
+                normalIndex = index
+                normalPosition = if (ready) runCatching { player.currentPosition }.getOrDefault(0) else seekOnPrepare
+            }
+            player.reset()
+            ready = false
+            preparing = false
+            failures = 0
+            tracks = next
+            index = if (next === normalTracks) normalIndex else 0
+            seekOnPrepare = if (next === normalTracks) normalPosition else 0
+        }
         sync()
     }
 
@@ -103,9 +122,7 @@ class Soundtrack(private val context: Context) {
         runCatching {
             player.reset()
             player.setAudioAttributes(musicAttributes())
-            context.assets.openFd("music/${tracks[index]}").use { afd ->
-                player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-            }
+            context.assets.openFd(tracks[index]).use { player.setDataSource(it) }
             player.prepareAsync()
         }.onFailure {
             preparing = false
@@ -156,4 +173,10 @@ class Soundtrack(private val context: Context) {
         .setUsage(AudioAttributes.USAGE_GAME)
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
+
+    private fun tracksIn(folder: String, extension: String): List<String> = context.assets.list(folder)
+        .orEmpty()
+        .filter { it.endsWith(extension, ignoreCase = true) }
+        .sorted()
+        .map { "$folder/$it" }
 }

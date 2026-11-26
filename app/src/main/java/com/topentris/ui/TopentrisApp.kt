@@ -34,6 +34,7 @@ private data class Session(
     val scorePopups: Boolean,
     val splitRotate: Boolean,
     val showButtons: Boolean,
+    val prikolMode: Boolean,
     val id: Int,
     val resume: MatchSave? = null,
 )
@@ -91,6 +92,7 @@ fun TopentrisApp(repository: SettingsRepository) {
                         scorePopups = settings.scorePopups,
                         splitRotate = settings.splitRotate,
                         showButtons = settings.showButtons,
+                        prikolMode = settings.prikolMode,
                         id = nextId,
                     )
                     nextId += 1
@@ -104,6 +106,7 @@ fun TopentrisApp(repository: SettingsRepository) {
                             scorePopups = settings.scorePopups,
                             splitRotate = settings.splitRotate,
                             showButtons = settings.showButtons,
+                            prikolMode = save.prikolMode,
                             id = nextId,
                             resume = save,
                         )
@@ -134,6 +137,8 @@ fun TopentrisApp(repository: SettingsRepository) {
                         scorePopups = current.scorePopups,
                         splitRotate = current.splitRotate,
                         showButtons = current.showButtons,
+                        prikolMode = current.prikolMode,
+                        prikolVolume = settings.prikolSfxVolume / 100f,
                         resume = current.resume,
                         onExit = { page = Page.MENU },
                         onRestart = {
