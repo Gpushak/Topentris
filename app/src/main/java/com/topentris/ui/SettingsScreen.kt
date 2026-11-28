@@ -3,6 +3,7 @@ package com.topentris.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,7 @@ import com.topentris.game.RotationSystem
 import com.topentris.game.ScoreTable
 import com.topentris.game.Settings
 import com.topentris.game.SettingsState
+import com.topentris.game.VisualStyle
 
 @Composable
 fun SettingsScreen(
@@ -50,6 +52,7 @@ fun SettingsScreen(
     onDelete: (String) -> Unit,
     onBack: () -> Unit,
 ) {
+    val visuals = LocalVisuals.current
     val settings = state.settings
     val rules = settings.rules
     val activePresetName = state.activeSavedPreset?.name ?: presetTitle(state.activeBuiltIn ?: Preset.CUSTOM)
@@ -71,7 +74,7 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        Text("Настройки", color = Paper, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text("Настройки", color = visuals.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Fold("Пресет", summary = activePresetName) {
             PresetSettings(state, onSelectBuiltIn, onSelectSaved, onSave, onDelete)
@@ -206,7 +209,18 @@ fun SettingsScreen(
             }
         }
         Spacer(Modifier.height(18.dp))
-        Fold("Экран") {
+        Fold("Экран", summary = settings.visualStyle.title) {
+            Text("Визуальный стиль", color = visuals.text, fontSize = 15.sp)
+            Column(
+                Modifier.fillMaxWidth().selectableGroup().padding(top = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                VisualStyle.entries.forEach { style ->
+                    ChoiceChip(style.title, settings.visualStyle == style, Modifier.fillMaxWidth()) {
+                        edit { it.copy(visualStyle = style) }
+                    }
+                }
+            }
             ToggleRow(
                 label = "Всплывающие очки",
                 hint = "Цифра поднимается и гаснет. Если закрыто четыре линии, рядом появляется «Тетрис!».",
@@ -219,7 +233,7 @@ fun SettingsScreen(
         Fold("Управление") {
             Text(
                 "По полю ведите палец в сторону — фигура едет за ним, не прыгая под палец. Свайп вниз её не уводит вбок: чтобы зайти в нишу, сдвиньте палец в сторону. Резкий свайп вниз — жёсткий сброс.",
-                color = Muted,
+                color = visuals.muted,
                 fontSize = 13.sp,
             )
             ToggleRow(
@@ -306,7 +320,7 @@ private fun PresetSettings(
     if (state.activeBuiltIn != null) {
         Text(
             text = presetBlurb(state.activeBuiltIn),
-            color = Muted,
+            color = LocalVisuals.current.muted,
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 8.dp),
         )
@@ -370,8 +384,9 @@ private fun PresetSettings(
 
 @Composable
 private fun RuleBlock(title: String, hint: String, content: @Composable () -> Unit) {
-    Text(title, color = Paper, fontSize = 15.sp, modifier = Modifier.padding(top = 14.dp))
-    Text(hint, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+    val visuals = LocalVisuals.current
+    Text(title, color = visuals.text, fontSize = 15.sp, modifier = Modifier.padding(top = 14.dp))
+    Text(hint, color = visuals.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
     content()
 }
 
@@ -389,15 +404,16 @@ private fun ChipRow(content: @Composable () -> Unit) {
 
 @Composable
 private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val visuals = LocalVisuals.current
     Text(
         text = text,
-        color = if (selected) Ink else Paper,
+        color = if (selected) visuals.onAccent else if (visuals.lcd) visuals.keyText else visuals.text,
         fontSize = 14.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Amber else KeyIdle)
+            .background(if (selected) visuals.accent else visuals.key)
             .selectable(selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     )
@@ -405,14 +421,15 @@ private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Mod
 
 @Composable
 private fun ToggleRow(label: String, hint: String? = null, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    val visuals = LocalVisuals.current
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(label, color = Paper, fontSize = 16.sp)
-            if (hint != null) Text(hint, color = Muted, fontSize = 12.sp)
+            Text(label, color = visuals.text, fontSize = 16.sp)
+            if (hint != null) Text(hint, color = visuals.muted, fontSize = 12.sp)
         }
         Switch(checked = checked, onCheckedChange = onChecked)
     }
@@ -427,9 +444,10 @@ private fun SliderRow(
     range: ClosedFloatingPointRange<Float>,
     onChange: (Int) -> Unit,
 ) {
-    Text(title, color = Paper, fontSize = 15.sp, modifier = Modifier.padding(top = 14.dp))
-    Text(valueLabel, color = Amber, fontSize = 13.sp)
-    if (hint != null) Text(hint, color = Muted, fontSize = 12.sp)
+    val visuals = LocalVisuals.current
+    Text(title, color = visuals.text, fontSize = 15.sp, modifier = Modifier.padding(top = 14.dp))
+    Text(valueLabel, color = visuals.accent, fontSize = 13.sp)
+    if (hint != null) Text(hint, color = visuals.muted, fontSize = 12.sp)
     Slider(
         value = value.toFloat(),
         onValueChange = { onChange(it.toInt()) },

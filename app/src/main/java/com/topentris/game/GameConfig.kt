@@ -119,6 +119,8 @@ data class ControlConfig(
     val vibration: Boolean = true,
 )
 
+enum class VisualStyle { SIMPLE, NEON, LCD }
+
 data class Settings(
     val rules: GameConfig = GameConfig.author(),
     val controls: ControlConfig = ControlConfig(),
@@ -130,16 +132,15 @@ data class Settings(
     val showButtons: Boolean = true,
     val prikolMode: Boolean = false,
     val prikolSfxVolume: Int = 120,
+    val visualStyle: VisualStyle = VisualStyle.SIMPLE,
 ) {
     val configuration: GameplaySettings
-        get() = GameplaySettings(rules, controls, scorePopups, splitRotate, showButtons)
+        get() = GameplaySettings(rules, controls, scorePopups)
 
     fun applyConfiguration(configuration: GameplaySettings): Settings = copy(
         rules = configuration.rules,
         controls = configuration.controls,
         scorePopups = configuration.scorePopups,
-        splitRotate = configuration.splitRotate,
-        showButtons = configuration.showButtons,
     )
 }
 
@@ -147,8 +148,6 @@ data class GameplaySettings(
     val rules: GameConfig,
     val controls: ControlConfig = ControlConfig(),
     val scorePopups: Boolean = true,
-    val splitRotate: Boolean = true,
-    val showButtons: Boolean = true,
 )
 
 data class SavedPreset(val name: String, val configuration: GameplaySettings)

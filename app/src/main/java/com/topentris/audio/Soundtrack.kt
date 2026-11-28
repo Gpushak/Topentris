@@ -10,7 +10,7 @@ import android.media.MediaPlayer
 class Soundtrack(private val context: Context) {
     private val player = MediaPlayer()
     private val audio = context.getSystemService(AudioManager::class.java)
-    private val normalTracks = tracksIn("music", ".flac")
+    private val normalTracks = tracksIn("music", ".ogg", ".flac")
     private val metalTracks = tracksIn("prikol/MetalOst", ".mp3")
     private var tracks = normalTracks
     private var index = 0
@@ -174,9 +174,9 @@ class Soundtrack(private val context: Context) {
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
 
-    private fun tracksIn(folder: String, extension: String): List<String> = context.assets.list(folder)
+    private fun tracksIn(folder: String, vararg extensions: String): List<String> = context.assets.list(folder)
         .orEmpty()
-        .filter { it.endsWith(extension, ignoreCase = true) }
+        .filter { asset -> extensions.any { asset.endsWith(it, ignoreCase = true) } }
         .sorted()
         .map { "$folder/$it" }
 }

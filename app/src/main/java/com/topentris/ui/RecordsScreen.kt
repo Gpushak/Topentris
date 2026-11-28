@@ -25,6 +25,7 @@ import com.topentris.game.Preset
 
 @Composable
 fun RecordsScreen(repository: SettingsRepository, onBack: () -> Unit) {
+    val visuals = LocalVisuals.current
     val records by repository.records.collectAsState(initial = Records())
     Column(
         Modifier
@@ -32,8 +33,8 @@ fun RecordsScreen(repository: SettingsRepository, onBack: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        Text("Рекорды", color = Paper, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Text("Топ-5 по пресетам и режиму", color = Muted, fontSize = 14.sp)
+        Text("Рекорды", color = visuals.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text("Топ-5 по пресетам и режиму", color = visuals.muted, fontSize = 14.sp)
         Spacer(Modifier.height(18.dp))
         Preset.entries.forEach { preset ->
             RecordGroup(presetTitle(preset), records.byPreset[preset].orEmpty())
@@ -46,21 +47,22 @@ fun RecordsScreen(repository: SettingsRepository, onBack: () -> Unit) {
 
 @Composable
 private fun RecordGroup(title: String, scores: List<Int>) {
+    val visuals = LocalVisuals.current
     Text(
         title,
-        color = Amber,
+        color = visuals.accent,
         fontSize = 16.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = 8.dp, bottom = 6.dp),
     )
     if (scores.isEmpty()) {
-        Text("Пока пусто", color = Muted, fontSize = 14.sp)
+        Text("Пока пусто", color = visuals.muted, fontSize = 14.sp)
         return
     }
     scores.forEachIndexed { index, score ->
         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${index + 1}", color = Muted, fontFamily = FontFamily.Monospace)
-            Text(formatScore(score), color = Paper, fontFamily = FontFamily.Monospace, fontSize = 16.sp)
+            Text("${index + 1}", color = visuals.muted, fontFamily = FontFamily.Monospace)
+            Text(formatScore(score), color = visuals.text, fontFamily = FontFamily.Monospace, fontSize = 16.sp)
         }
     }
 }

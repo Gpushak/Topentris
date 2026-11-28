@@ -1,7 +1,9 @@
 package com.topentris.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,87 +83,91 @@ fun TopentrisApp(repository: SettingsRepository) {
         effects.setVolume(settings.sfxVolume / 100f)
     }
 
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-        when (page) {
-            Page.MENU -> MenuScreen(
-                onPlay = {
-                    scope.launch { repository.clearMatch() }
-                    session = Session(
-                        rules = settings.rules,
-                        controls = settings.controls,
-                        scorePopups = settings.scorePopups,
-                        splitRotate = settings.splitRotate,
-                        showButtons = settings.showButtons,
-                        prikolMode = settings.prikolMode,
-                        id = nextId,
-                    )
-                    nextId += 1
-                    page = Page.GAME
-                },
-                onContinue = saved?.let { save ->
-                    {
-                        session = Session(
-                            rules = save.rules,
-                            controls = save.controls,
-                            scorePopups = settings.scorePopups,
-                            splitRotate = settings.splitRotate,
-                            showButtons = settings.showButtons,
-                            prikolMode = save.prikolMode,
-                            id = nextId,
-                            resume = save,
-                        )
-                        nextId += 1
-                        page = Page.GAME
-                    }
-                },
-                onSettings = { page = Page.SETTINGS },
-                onRecords = { page = Page.RECORDS },
-            )
-            Page.GAME -> {
-                val current = session
-                if (current == null) {
-                    MenuScreen(
-                        onPlay = { page = Page.MENU },
-                        onContinue = null,
+    TopentrisTheme(settings.visualStyle) {
+        Surface(Modifier.fillMaxSize(), color = LocalVisuals.current.background) {
+            Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                when (page) {
+                    Page.MENU -> MenuScreen(
+                        onPlay = {
+                            scope.launch { repository.clearMatch() }
+                            session = Session(
+                                rules = settings.rules,
+                                controls = settings.controls,
+                                scorePopups = settings.scorePopups,
+                                splitRotate = settings.splitRotate,
+                                showButtons = settings.showButtons,
+                                prikolMode = settings.prikolMode,
+                                id = nextId,
+                            )
+                            nextId += 1
+                            page = Page.GAME
+                        },
+                        onContinue = saved?.let { save ->
+                            {
+                                session = Session(
+                                    rules = save.rules,
+                                    controls = save.controls,
+                                    scorePopups = settings.scorePopups,
+                                    splitRotate = settings.splitRotate,
+                                    showButtons = settings.showButtons,
+                                    prikolMode = save.prikolMode,
+                                    id = nextId,
+                                    resume = save,
+                                )
+                                nextId += 1
+                                page = Page.GAME
+                            }
+                        },
                         onSettings = { page = Page.SETTINGS },
                         onRecords = { page = Page.RECORDS },
                     )
-                } else {
-                    GameScreen(
-                        rules = current.rules,
-                        controls = current.controls,
-                        sessionId = current.id,
+                    Page.GAME -> {
+                        val current = session
+                        if (current == null) {
+                            MenuScreen(
+                                onPlay = { page = Page.MENU },
+                                onContinue = null,
+                                onSettings = { page = Page.SETTINGS },
+                                onRecords = { page = Page.RECORDS },
+                            )
+                        } else {
+                            GameScreen(
+                                rules = current.rules,
+                                controls = current.controls,
+                                sessionId = current.id,
+                                repository = repository,
+                                soundtrack = soundtrack,
+                                effects = effects,
+                                scorePopups = current.scorePopups,
+                                splitRotate = current.splitRotate,
+                                showButtons = current.showButtons,
+                                prikolMode = current.prikolMode,
+                                prikolVolume = settings.prikolSfxVolume / 100f,
+                                resume = current.resume,
+                                onExit = { page = Page.MENU },
+                                onRestart = {
+                                    scope.launch { repository.clearMatch() }
+                                    session = current.copy(id = nextId, resume = null)
+                                    nextId += 1
+                                },
+                            )
+                        }
+                    }
+                    Page.SETTINGS -> SettingsScreen(
+                        state = settingsState,
+                        edit = { transform -> scope.launch { repository.update(transform) } },
+                        onSelectBuiltIn = { preset -> scope.launch { repository.selectBuiltIn(preset) } },
+                        onSelectSaved = { name -> scope.launch { repository.selectSavedPreset(name) } },
+                        onSave = { name -> scope.launch { repository.savePreset(name) } },
+                        onDelete = { name -> scope.launch { repository.deletePreset(name) } },
+                        onBack = { page = Page.MENU },
+                    )
+                    Page.RECORDS -> RecordsScreen(
                         repository = repository,
-                        soundtrack = soundtrack,
-                        effects = effects,
-                        scorePopups = current.scorePopups,
-                        splitRotate = current.splitRotate,
-                        showButtons = current.showButtons,
-                        prikolMode = current.prikolMode,
-                        prikolVolume = settings.prikolSfxVolume / 100f,
-                        resume = current.resume,
-                        onExit = { page = Page.MENU },
-                        onRestart = {
-                            scope.launch { repository.clearMatch() }
-                            session = current.copy(id = nextId, resume = null)
-                            nextId += 1
-                        },
+                        onBack = { page = Page.MENU },
                     )
                 }
             }
-            Page.SETTINGS -> SettingsScreen(
-                state = settingsState,
-                edit = { transform -> scope.launch { repository.update(transform) } },
-                onSelectBuiltIn = { preset -> scope.launch { repository.selectBuiltIn(preset) } },
-                onSelectSaved = { name -> scope.launch { repository.selectSavedPreset(name) } },
-                onSave = { name -> scope.launch { repository.savePreset(name) } },
-                onDelete = { name -> scope.launch { repository.deletePreset(name) } },
-                onBack = { page = Page.MENU },
-            )
-            Page.RECORDS -> RecordsScreen(
-                repository = repository,
-                onBack = { page = Page.MENU },
-            )
         }
     }
 }

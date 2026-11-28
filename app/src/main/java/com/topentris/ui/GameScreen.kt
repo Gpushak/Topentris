@@ -8,10 +8,12 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,9 +39,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntSize
+import com.topentris.R
+import com.topentris.game.VisualStyle
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.PointerId
@@ -50,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -98,6 +108,8 @@ fun GameScreen(
     onExit: () -> Unit,
     onRestart: () -> Unit,
 ) {
+    val visuals = LocalVisuals.current
+    val tiles = neonTiles(visuals)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val engine = remember(sessionId) {
@@ -280,27 +292,34 @@ fun GameScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            InfoBar(snap, rules, Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp))
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
-            ) {
-                Canvas(
+            ConsoleFrame(Modifier.weight(1f).fillMaxWidth(), visuals) {
+                InfoBar(
+                    snap,
+                    rules,
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    scoreGain = if (visuals.lcd && scorePopups) floaters.lastOrNull() else null,
+                )
+                Box(
                     Modifier
-                        .fillMaxSize()
-                        .pointerInput(sessionId, playing) { if (playing) watchField(live, board) },
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = if (visuals.simple) 2.dp else 3.dp),
                 ) {
-                    drawField(snap, prikolMode)
-                    if (bursts.isNotEmpty()) {
-                        val field = fieldMetrics(size.width, size.height)
-                        for (burst in bursts) {
-                            burst.draw(this, burstClock, Offset(field.left, field.top), field.cell)
+                    Canvas(
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(sessionId, playing) { if (playing) watchField(live, board) },
+                    ) {
+                        drawField(snap, prikolMode, visuals, tiles)
+                        if (bursts.isNotEmpty()) {
+                            val field = fieldMetrics(size.width, size.height)
+                            for (burst in bursts) {
+                                burst.draw(this, burstClock, Offset(field.left, field.top), field.cell)
+                            }
                         }
                     }
+                    if (!visuals.lcd) ScoreFloaters(floaters, clock, Modifier.fillMaxSize())
                 }
-                ScoreFloaters(floaters, clock, Modifier.fillMaxSize())
             }
             ControlPad(
                 input = live,
@@ -349,11 +368,81 @@ fun GameScreen(
 }
 
 @Composable
-private fun InfoBar(snap: GameSnapshot, rules: GameConfig, modifier: Modifier) {
+private fun ConsoleFrame(modifier: Modifier, visuals: Visuals, content: @Composable ColumnScope.() -> Unit) {
+    if (visuals.simple) {
+        Column(modifier, content = content)
+        return
+    }
+    BoxWithConstraints(modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+        val width = minOf(maxWidth, (maxHeight - 108.dp).coerceAtLeast(0.dp) / 2 + 20.dp)
+        Column(Modifier.width(width).fillMaxHeight()) {
+            GameWordmark(visuals, Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp))
+            val shape = RoundedCornerShape(if (visuals.lcd) 16.dp else 6.dp)
+            val bezel = if (visuals.lcd) Modifier
+                .background(Color(0xFFADA482), shape)
+                .border(1.dp, visuals.edge, shape)
+                .padding(5.dp)
+                .background(Color(0xFFA5A575), RoundedCornerShape(11.dp))
+                .padding(3.dp) else Modifier
+            Column(Modifier.fillMaxWidth().weight(1f).then(bezel), content = content)
+        }
+    }
+}
+
+@Composable
+private fun InfoBar(snap: GameSnapshot, rules: GameConfig, modifier: Modifier, scoreGain: ScoreFloater?) {
+    val visuals = LocalVisuals.current
+    if (!visuals.simple) {
+        val shape = RoundedCornerShape(if (visuals.lcd) 7.dp else 4.dp)
+        val panel = Modifier.background(if (visuals.lcd) visuals.field else visuals.panel, shape)
+            .border(1.dp, visuals.edge, shape)
+        val labelColor = if (visuals.lcd) visuals.text else visuals.muted
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (rules.hold) {
+                    Column(Modifier.fillMaxWidth().then(panel), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("ЗАПАС", color = labelColor, fontSize = 10.sp, fontFamily = visuals.displayFont)
+                        MiniPiece(snap.hold, snap.holdUsed, Modifier.width(28.dp).height(23.dp))
+                    }
+                }
+            }
+            Column(Modifier.weight(1.5f).then(if (visuals.lcd) panel else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("СЧЁТ", color = labelColor, fontSize = 10.sp, fontFamily = visuals.displayFont)
+                Text(formatScore(snap.score), color = visuals.text, fontSize = 21.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                if (visuals.lcd) {
+                    val gainText = scoreGain?.let {
+                        "+${formatScore(it.points)}" + if (it.tetris) "\nТетрис!" else ""
+                    }.orEmpty()
+                    Text(
+                        text = gainText,
+                        color = visuals.text,
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = visuals.displayFont,
+                        textAlign = TextAlign.Center,
+                        minLines = 2,
+                        maxLines = 2,
+                    )
+                }
+                Text("УР. ${snap.level}  ЛИН. ${snap.lines}", color = labelColor, fontSize = 10.sp, fontFamily = visuals.displayFont)
+            }
+            Column(Modifier.weight(1f).then(panel), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("ДАЛЬШЕ", color = labelColor, fontSize = 10.sp, fontFamily = visuals.displayFont)
+                Row(Modifier.fillMaxWidth().height(23.dp), horizontalArrangement = Arrangement.Center) {
+                    snap.queue.forEach { piece ->
+                        val slot = if (snap.queue.size == 1) Modifier.width(32.dp) else Modifier.weight(1f)
+                        MiniPiece(piece, false, slot.fillMaxHeight())
+                    }
+                }
+            }
+        }
+        return
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         if (rules.hold) {
             Column(Modifier.width(52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Запас", color = Muted, fontSize = 11.sp)
+                Text("Запас", color = visuals.muted, fontSize = 11.sp, fontFamily = visuals.displayFont)
                 MiniPiece(
                     piece = snap.hold,
                     dim = snap.holdUsed,
@@ -367,27 +456,33 @@ private fun InfoBar(snap: GameSnapshot, rules: GameConfig, modifier: Modifier) {
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = formatScore(snap.score),
-                color = Paper,
+                color = visuals.text,
                 fontSize = 20.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
             )
             Text(
                 text = "уровень ${snap.level}  ·  линии ${snap.lines}",
-                color = Muted,
+                color = visuals.muted,
                 fontSize = 12.sp,
+                fontFamily = visuals.displayFont,
             )
         }
-        Row(Modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            snap.queue.forEach { piece ->
-                MiniPiece(
-                    piece = piece,
-                    dim = false,
-                    modifier = Modifier
-                        .padding(start = 2.dp)
-                        .width(34.dp)
-                        .fillMaxHeight(),
-                )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(
+                Modifier.height(44.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                snap.queue.forEach { piece ->
+                    MiniPiece(
+                        piece = piece,
+                        dim = false,
+                        modifier = Modifier
+                            .padding(start = 2.dp)
+                            .width(34.dp)
+                            .fillMaxHeight(),
+                    )
+                }
             }
         }
     }
@@ -396,6 +491,7 @@ private fun InfoBar(snap: GameSnapshot, rules: GameConfig, modifier: Modifier) {
 @Composable
 private fun ScoreFloaters(floaters: List<ScoreFloater>, now: Long, modifier: Modifier) {
     if (floaters.isEmpty()) return
+    val visuals = LocalVisuals.current
     val density = LocalDensity.current
     BoxWithConstraints(modifier) {
         val widthPx = with(density) { maxWidth.toPx() }
@@ -420,11 +516,11 @@ private fun ScoreFloaters(floaters: List<ScoreFloater>, now: Long, modifier: Mod
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (floater.tetris) {
-                    Text("Тетрис!", color = Amber, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text("Тетрис!", color = visuals.accent, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(
                     text = "+${formatScore(floater.points)}",
-                    color = Paper,
+                    color = visuals.text,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
@@ -444,7 +540,13 @@ private data class ScoreFloater(
 private const val POPUP_LIFE_NS = 1_000_000_000L
 
 @Composable
+private fun neonTiles(visuals: Visuals): ImageBitmap? =
+    if (visuals.style == VisualStyle.NEON) ImageBitmap.imageResource(R.drawable.neon_tiles) else null
+
+@Composable
 private fun MiniPiece(piece: Piece?, dim: Boolean, modifier: Modifier) {
+    val visuals = LocalVisuals.current
+    val tiles = neonTiles(visuals)
     Canvas(modifier) {
         val shown = piece ?: return@Canvas
         val cells = Rotation.cells(shown, 0)
@@ -457,9 +559,8 @@ private fun MiniPiece(piece: Piece?, dim: Boolean, modifier: Modifier) {
         val cell = minOf(size.width / (spanX + 0.6f), size.height / (spanY + 0.6f))
         val left = (size.width - spanX * cell) / 2f
         val top = (size.height - spanY * cell) / 2f
-        val color = pieceColor(shown).copy(alpha = if (dim) 0.35f else 1f)
         for (block in cells) {
-            block(left + (block.x - minX) * cell, top + (block.y - minY) * cell, cell, color)
+            block(left + (block.x - minX) * cell, top + (block.y - minY) * cell, cell, shown, visuals, tiles, opacity = if (dim) 0.35f else 1f)
         }
     }
 }
@@ -472,11 +573,15 @@ private fun ControlPad(
     showButtons: Boolean,
     onPause: () -> Unit,
 ) {
+    val simple = LocalVisuals.current.simple
+    val margin = if (simple) 10.dp else 24.dp
+    val upperHeight = if (simple) 52.dp else 48.dp
+    val lowerHeight = if (simple) 56.dp else 48.dp
     if (!showButtons) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = margin, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (holdEnabled) {
@@ -489,49 +594,50 @@ private fun ControlPad(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = margin, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            GameKey(GameKeyKind.ROTATE_LEFT, true, Modifier.weight(1f).height(52.dp), onDown = { input.ccw = true })
-            GameKey(GameKeyKind.ROTATE_RIGHT, true, Modifier.weight(1f).height(52.dp), onDown = { input.cw = true })
-            GameKey(GameKeyKind.HOLD, holdEnabled, Modifier.weight(1f).height(52.dp), onDown = { input.hold = true })
-            GameKey(GameKeyKind.PAUSE, true, Modifier.weight(1f).height(52.dp), onDown = onPause)
+            GameKey(GameKeyKind.ROTATE_LEFT, true, Modifier.weight(1f).height(upperHeight), onDown = { input.ccw = true })
+            GameKey(GameKeyKind.ROTATE_RIGHT, true, Modifier.weight(1f).height(upperHeight), onDown = { input.cw = true })
+            GameKey(GameKeyKind.HOLD, holdEnabled, Modifier.weight(1f).height(upperHeight), onDown = { input.hold = true })
+            GameKey(GameKeyKind.PAUSE, true, Modifier.weight(1f).height(upperHeight), onDown = onPause)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GameKey(
                 GameKeyKind.LEFT,
                 true,
-                Modifier.weight(1f).height(56.dp),
+                Modifier.weight(1f).height(lowerHeight),
                 onDown = { input.pressLeft(true) },
                 onUp = { input.pressLeft(false) },
             )
             GameKey(
                 GameKeyKind.DOWN,
                 true,
-                Modifier.weight(1f).height(56.dp),
+                Modifier.weight(1f).height(lowerHeight),
                 onDown = { input.soft = true },
                 onUp = { input.soft = false },
             )
             GameKey(
                 GameKeyKind.RIGHT,
                 true,
-                Modifier.weight(1f).height(56.dp),
+                Modifier.weight(1f).height(lowerHeight),
                 onDown = { input.pressRight(true) },
                 onUp = { input.pressRight(false) },
             )
-            GameKey(GameKeyKind.DROP, hardEnabled, Modifier.weight(1f).height(56.dp), onDown = { input.hard = true })
+            GameKey(GameKeyKind.DROP, hardEnabled, Modifier.weight(1f).height(lowerHeight), onDown = { input.hard = true })
         }
     }
 }
 
 @Composable
 private fun ResumeCountdown(seconds: Int) {
+    val visuals = LocalVisuals.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         BlockingScrim()
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Продолжение через", color = Paper, fontSize = 18.sp)
-            Text("$seconds", color = Amber, fontSize = 64.sp, fontWeight = FontWeight.Bold)
+            Text("Продолжение через", color = visuals.text, fontSize = 18.sp)
+            Text("$seconds", color = visuals.accent, fontSize = 64.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -542,18 +648,19 @@ private fun Overlay(
     detail: String,
     actions: @Composable () -> Unit,
 ) {
+    val visuals = LocalVisuals.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         BlockingScrim()
         Column(
             Modifier
                 .padding(horizontal = 28.dp)
                 .fillMaxWidth()
-                .background(Panel, RoundedCornerShape(16.dp))
+                .background(visuals.panel, RoundedCornerShape(if (visuals.simple) 16.dp else visuals.plateRadius))
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(title, color = Paper, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Text(detail, color = Muted, fontSize = 15.sp)
+            Text(title, color = visuals.text, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text(detail, color = visuals.muted, fontSize = 15.sp)
             actions()
         }
     }
@@ -564,7 +671,7 @@ private fun BlockingScrim() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xC0101218))
+            .background(LocalVisuals.current.scrim)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -576,15 +683,19 @@ private fun BlockingScrim() {
     )
 }
 
-private fun DrawScope.drawField(snap: GameSnapshot, prikolMode: Boolean) {
+private fun DrawScope.drawField(snap: GameSnapshot, prikolMode: Boolean, visuals: Visuals, tiles: ImageBitmap?) {
     val metrics = fieldMetrics(size.width, size.height)
+    if (metrics.cell <= 1f) return
+    val origin = Offset(metrics.left, metrics.top)
+    val dimensions = Size(metrics.cell * COLS, metrics.cell * ROWS)
+    val usePrikolColors = prikolMode && visuals.simple
     drawRoundRect(
-        color = if (prikolMode) Color(0xFF301034) else Field,
-        topLeft = Offset(metrics.left, metrics.top),
-        size = Size(metrics.cell * COLS, metrics.cell * ROWS),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f),
+        color = if (usePrikolColors) Color(0xFF301034) else visuals.field,
+        topLeft = origin,
+        size = dimensions,
+        cornerRadius = CornerRadius(6f),
     )
-    val grid = if (prikolMode) Color(0xFF6C2769) else GridLine
+    val grid = if (usePrikolColors) Color(0xFF6C2769) else visuals.grid
     for (column in 0..COLS) {
         val x = metrics.left + column * metrics.cell
         drawLine(grid, Offset(x, metrics.top), Offset(x, metrics.top + metrics.cell * ROWS), strokeWidth = 1f)
@@ -593,37 +704,116 @@ private fun DrawScope.drawField(snap: GameSnapshot, prikolMode: Boolean) {
         val y = metrics.top + row * metrics.cell
         drawLine(grid, Offset(metrics.left, y), Offset(metrics.left + metrics.cell * COLS, y), strokeWidth = 1f)
     }
-    val active = snap.active.toSet()
-    for (cell in snap.ghost) {
-        if (cell.y !in 0 until ROWS || cell in active) continue
-        val color = snap.activeType?.let { pieceColor(it).copy(alpha = 0.28f) } ?: continue
-        paint(metrics, cell, color)
+    if (!visuals.simple) {
+        val stroke = if (visuals.lcd) 3.dp.toPx() else 1.5.dp.toPx()
+        val inset = stroke / 2f
+        drawRoundRect(
+            visuals.edge,
+            origin + Offset(inset, inset),
+            Size(dimensions.width - stroke, dimensions.height - stroke),
+            CornerRadius(6f),
+            style = Stroke(stroke),
+        )
+    }
+    val falling = snap.activeType
+    if (falling != null) {
+        for (cell in snap.ghost) {
+            if (cell.y !in 0 until ROWS || cell in snap.active) continue
+            paint(metrics, cell, falling, visuals, tiles, ghost = true)
+        }
     }
     for (y in 0 until ROWS) {
         for (x in 0 until COLS) {
             val type = snap.cellAt(x, y) ?: continue
-            paint(metrics, Cell(x, y), pieceColor(type))
+            paint(metrics, Cell(x, y), type, visuals, tiles)
         }
     }
-    val falling = snap.activeType
     if (falling != null) {
         for (cell in snap.active) {
             if (cell.y !in 0 until ROWS) continue
-            paint(metrics, cell, pieceColor(falling))
+            paint(metrics, cell, falling, visuals, tiles, active = true)
         }
     }
 }
 
-private fun DrawScope.paint(metrics: FieldMetrics, cell: Cell, color: Color) {
-    block(metrics.left + cell.x * metrics.cell, metrics.top + cell.y * metrics.cell, metrics.cell, color)
+private fun DrawScope.paint(
+    metrics: FieldMetrics,
+    cell: Cell,
+    piece: Piece,
+    visuals: Visuals,
+    tiles: ImageBitmap?,
+    ghost: Boolean = false,
+    active: Boolean = false,
+) {
+    block(
+        metrics.left + cell.x * metrics.cell, metrics.top + cell.y * metrics.cell,
+        metrics.cell, piece, visuals, tiles, ghost, active,
+    )
 }
 
-private fun DrawScope.block(x: Float, y: Float, cell: Float, color: Color) {
+private fun DrawScope.block(
+    x: Float,
+    y: Float,
+    cell: Float,
+    piece: Piece,
+    visuals: Visuals,
+    tiles: ImageBitmap?,
+    ghost: Boolean = false,
+    active: Boolean = false,
+    opacity: Float = 1f,
+) {
+    if (cell <= 1f) return
+    val color = visuals.piece(piece).copy(alpha = opacity)
     val gap = (cell * 0.08f).coerceAtLeast(1f)
     val side = cell - gap
     val origin = Offset(x + gap / 2f, y + gap / 2f)
-    drawRect(color, origin, Size(side, side))
-    drawRect(Color.White.copy(alpha = 0.24f), origin, Size(side, side * 0.16f))
+    val dimensions = Size(side, side)
+    when {
+        visuals.simple -> {
+            drawRect(color.copy(alpha = if (ghost) 0.28f else color.alpha), origin, dimensions)
+            drawRect(Color.White.copy(alpha = 0.24f), origin, Size(side, side * 0.16f))
+        }
+        ghost -> {
+            val inset = side * 0.12f
+            val leg = side * 0.22f
+            val stroke = side * 0.06f
+            val outline = color.copy(alpha = 0.76f)
+            for (dx in listOf(1f, -1f)) {
+                for (dy in listOf(1f, -1f)) {
+                    val corner = origin + Offset(
+                        if (dx > 0) inset else side - inset,
+                        if (dy > 0) inset else side - inset,
+                    )
+                    drawLine(outline, corner, corner + Offset(dx * leg, 0f), stroke)
+                    drawLine(outline, corner, corner + Offset(0f, dy * leg), stroke)
+                }
+            }
+        }
+        visuals.lcd -> {
+            drawRect(color, origin, dimensions)
+            val inset = side * 0.18f
+            drawRect(
+                visuals.field.copy(alpha = color.alpha * 0.58f),
+                origin + Offset(inset, inset),
+                Size(side - 2 * inset, side - 2 * inset),
+                style = Stroke(side * 0.055f),
+            )
+        }
+        tiles != null -> {
+            // The atlas uses Piece order across columns, with the brighter falling pieces below.
+            val sprite = tiles.height / 2
+            val extent = (cell * 44f / 48f).roundToInt().coerceAtLeast(1)
+            val inset = (cell - extent) / 2f
+            drawImage(
+                tiles,
+                srcOffset = IntOffset(piece.ordinal * sprite, if (active) sprite else 0),
+                srcSize = IntSize(sprite, sprite),
+                dstOffset = IntOffset((x + inset).roundToInt(), (y + inset).roundToInt()),
+                dstSize = IntSize(extent, extent),
+                alpha = opacity,
+            )
+        }
+    }
 }
 
 private data class FieldMetrics(val cell: Float, val left: Float, val top: Float)

@@ -27,7 +27,7 @@ class SettingsTest {
         val saved = SavedPreset("Мой набор", custom.configuration)
 
         assertNull(SettingsState(custom.copy(controls = ControlConfig()), listOf(saved)).activeSavedPreset)
-        val changed = SettingsState(custom.copy(showButtons = true), listOf(saved))
+        val changed = SettingsState(custom.copy(scorePopups = false), listOf(saved))
         assertNull(changed.activeSavedPreset)
         assertNull(changed.activeBuiltIn)
         assertEquals(saved, changed.copy(settings = custom).activeSavedPreset)
@@ -36,13 +36,27 @@ class SettingsTest {
     @Test
     fun audioAndPrikolModeStayIndependentOfPresets() {
         val settings = Settings(music = false, musicVolume = 24, sfxVolume = 62, prikolMode = true)
-        val configuration = GameplaySettings(GameConfig.nes(), showButtons = false)
-        val saved = SavedPreset("NES без кнопок", configuration)
+        val configuration = GameplaySettings(GameConfig.nes(), scorePopups = false)
+        val saved = SavedPreset("NES без всплывающих очков", configuration)
         val applied = settings.applyConfiguration(configuration)
 
         assertEquals(Preset.AUTHOR, SettingsState(settings).activeBuiltIn)
         assertEquals(saved, SettingsState(applied, listOf(saved)).activeSavedPreset)
-        assertEquals(settings.copy(rules = GameConfig.nes(), showButtons = false), applied)
+        assertEquals(settings.copy(rules = GameConfig.nes(), scorePopups = false), applied)
+    }
+
+    @Test
+    fun visualStyleStaysIndependentOfBuiltInAndSavedPresets() {
+        val settings = Settings(visualStyle = VisualStyle.LCD, splitRotate = false, showButtons = false)
+        assertEquals(Preset.AUTHOR, SettingsState(settings).activeBuiltIn)
+
+        val configuration = GameplaySettings(GameConfig.nes(), scorePopups = false)
+        val saved = SavedPreset("NES без всплывающих очков", configuration)
+        val applied = settings.applyConfiguration(configuration)
+        assertEquals(false, applied.splitRotate)
+        assertEquals(false, applied.showButtons)
+        assertEquals(VisualStyle.LCD, applied.visualStyle)
+        assertEquals(saved, SettingsState(applied.copy(visualStyle = VisualStyle.NEON, splitRotate = true, showButtons = true), listOf(saved)).activeSavedPreset)
     }
 
     @Test

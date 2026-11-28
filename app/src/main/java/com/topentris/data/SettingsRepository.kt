@@ -19,6 +19,7 @@ import com.topentris.game.SavedPreset
 import com.topentris.game.ScoreTable
 import com.topentris.game.Settings
 import com.topentris.game.SettingsState
+import com.topentris.game.VisualStyle
 import com.topentris.game.decodeControls
 import com.topentris.game.decodeRules
 import com.topentris.game.encodeControls
@@ -165,6 +166,7 @@ class SettingsRepository(private val context: Context) {
             showButtons = this[Keys.showButtons] ?: true,
             prikolMode = this[Keys.prikolMode] ?: false,
             prikolSfxVolume = (this[Keys.prikolSfxVolume] ?: sfxVolume * 3 / 2).coerceIn(0, 200),
+            visualStyle = enumOr(this[Keys.visualStyle], VisualStyle.SIMPLE),
         )
     }
 
@@ -192,6 +194,7 @@ class SettingsRepository(private val context: Context) {
         this[Keys.showButtons] = settings.showButtons
         this[Keys.prikolMode] = settings.prikolMode
         this[Keys.prikolSfxVolume] = settings.prikolSfxVolume.coerceIn(0, 200)
+        this[Keys.visualStyle] = settings.visualStyle.name
     }
 
     private fun Preferences.savedPresets(): List<SavedPreset> {
@@ -206,8 +209,6 @@ class SettingsRepository(private val context: Context) {
                         rules = decodeRules(entry.getString("rules")).detectPreset(),
                         controls = decodeControls(entry.getString("controls")),
                         scorePopups = entry.getBoolean("scorePopups"),
-                        splitRotate = entry.getBoolean("splitRotate"),
-                        showButtons = entry.getBoolean("showButtons"),
                     ),
                 )
             }.getOrNull()
@@ -222,9 +223,7 @@ class SettingsRepository(private val context: Context) {
                     .put("name", name)
                     .put("rules", encodeRules(configuration.rules))
                     .put("controls", encodeControls(configuration.controls))
-                    .put("scorePopups", configuration.scorePopups)
-                    .put("splitRotate", configuration.splitRotate)
-                    .put("showButtons", configuration.showButtons),
+                    .put("scorePopups", configuration.scorePopups),
             )
         }
         this[Keys.savedPresets] = array.toString()
@@ -268,6 +267,7 @@ class SettingsRepository(private val context: Context) {
         val showButtons = booleanPreferencesKey("show_buttons")
         val prikolMode = booleanPreferencesKey("prikol_mode")
         val prikolSfxVolume = intPreferencesKey("prikol_sfx_volume")
+        val visualStyle = stringPreferencesKey("visual_style")
         val prikolScores = stringPreferencesKey("scores_prikol")
         val savedPresets = stringPreferencesKey("saved_presets")
         val preferredPreset = stringPreferencesKey("preferred_preset")

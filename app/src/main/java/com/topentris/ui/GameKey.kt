@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -61,18 +62,20 @@ internal fun GameKey(
     onDown: () -> Unit,
     onUp: () -> Unit = {},
 ) {
+    val visuals = LocalVisuals.current
     var pressed by remember { mutableStateOf(false) }
     val downState = rememberUpdatedState(onDown)
     val upState = rememberUpdatedState(onUp)
     val travel by animateDpAsState(if (pressed) 3.dp else 0.dp, tween(85), label = "key travel")
     val drop = kind == GameKeyKind.DROP && enabled
     val icon = when {
-        !enabled -> Muted.copy(alpha = 0.55f)
-        drop -> Color(0xFFFFDEA2)
+        !enabled -> visuals.muted.copy(alpha = 0.55f)
+        drop -> visuals.dropText
+        !visuals.simple -> visuals.keyText
         kind == GameKeyKind.HOLD -> Color(0xFFA6DABA)
-        kind == GameKeyKind.PAUSE -> Amber
+        kind == GameKeyKind.PAUSE -> visuals.accent
         kind == GameKeyKind.ROTATE_LEFT || kind == GameKeyKind.ROTATE_RIGHT -> Color(0xFFAED7FF)
-        else -> Paper
+        else -> visuals.keyText
     }
     Box(
         modifier
@@ -84,23 +87,32 @@ internal fun GameKey(
             .drawWithCache {
                 val depth = if (enabled) 4.dp.toPx() else 2.dp.toPx()
                 val faceHeight = (size.height - depth).coerceAtLeast(0f)
-                val radius = CornerRadius(11.dp.toPx())
+                val radius = CornerRadius(if (visuals.simple) 11.dp.toPx() else visuals.plateRadius.toPx())
                 val inset = 0.5.dp.toPx()
                 val outline = when {
-                    !enabled -> KeyEdge.copy(alpha = 0.42f)
-                    drop -> Color(0xFFC48944)
+                    !enabled -> visuals.edge.copy(alpha = 0.42f)
+                    drop -> if (visuals.simple) Color(0xFFC48944) else visuals.drop
                     pressed -> icon.copy(alpha = 0.74f)
-                    else -> KeyEdge
+                    else -> visuals.edge
                 }
                 val face = when {
-                    !enabled -> listOf(Panel, Ink)
-                    drop -> listOf(Color(0xFF795022), Color(0xFF473018))
-                    pressed -> listOf(Color(0xFF42506A), KeyPressed)
-                    else -> listOf(Color(0xFF323D51), KeyIdle)
+                    !enabled -> listOf(visuals.panel, visuals.background)
+                    visuals.simple && drop -> listOf(visuals.drop, Color(0xFF473018))
+                    visuals.simple && pressed -> listOf(Color(0xFF42506A), visuals.keyPressed)
+                    visuals.simple -> listOf(Color(0xFF323D51), visuals.key)
+                    else -> {
+                        val color = when {
+                            drop && pressed -> lerp(visuals.drop, visuals.keyBase, 0.16f)
+                            drop -> visuals.drop
+                            pressed -> visuals.keyPressed
+                            else -> visuals.key
+                        }
+                        listOf(lerp(color, Color.White, if (visuals.lcd) 0.12f else 0.04f), color)
+                    }
                 }
                 val lowered = travel.toPx()
                 val gradient = Brush.verticalGradient(face, startY = lowered, endY = lowered + faceHeight)
-                val base = if (drop) Color(0xFF382311) else Color(0xFF0B1018)
+                val base = if (visuals.simple && drop) Color(0xFF382311) else visuals.keyBase
                 onDrawBehind {
                     drawRoundRect(base, cornerRadius = radius)
                     drawRoundRect(gradient, Offset(0f, lowered), Size(size.width, faceHeight), radius)
